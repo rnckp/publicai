@@ -1,42 +1,26 @@
 # Durable implementation notes
 
-- HTML parsing rejects nesting beyond 128 elements and empty evidence pages as
-  acquisition gaps; these are parser safety invariants, not deployment options.
-  Authentication-only observations and contact-link destinations remain retainable.
-- Generated Compose releases use project-scoped image names. Preserve distinct
-  project names when deploying or rolling back separate snapshot releases.
-- Runtime `--check` validates an offline snapshot; `--health-check` negotiates MCP
-  and lists the six tools on loopback. It must use the running server's HTTP port.
-
-- The requested two Pydantic AI agents are discovery and evidence review. Package
-  generation remains deterministic, as specified by the MVP plan; there is no
-  code-generating builder agent.
-- The user's explicit instruction to use the OpenAI API directly overrides the
-  OpenRouter default in `AGENTS.md`. Both agents use low reasoning effort and
-  read `OPENAI_API_KEY` from the environment. Existing local
-  credentials are authorized for the Ausserberg workflow test; validation results
-  must be reported from actual runs.
-- Live Luna discovery runs produced malformed/truncated inventories, invalid
-  contact-source citations and unsupported absence claims. The output now uses
-  six explicit required capability keys with OpenAI strict structured output,
-  concise-citation instructions and `gpt-6-sol` for discovery; review uses Luna.
-  Do not weaken evidence checks to compensate for model failures.
-- Retained snapshots are minimized after full-context review to cited excerpts
-  and relevant observed links. Their hashes identify that retained text, not the
-  original HTML response. Evidence checks remain reproducible.
-- Ausserberg publishes PDFs through its root `action=get_file` route with numeric
-  `id` and alphanumeric `resource_link_id`, marked by PDF icons. Only that exact
-  observed parameter shape is allowed as a handoff. Fetching query URLs remains
-  forbidden; document titles/URLs are trusted acquisition metadata, always
-  labeled uninspected and preserved through snapshot minimization.
-- The authorized website hostname is exactly `www.ausserberg.ch`. External portal
-  URLs may be retained as handoffs but never fetched. The direct OpenAI API is
-  a separate, explicitly authorized infrastructure connection.
-- `mcp` 2.x names its high-level Python server `MCPServer`; older `FastMCP` imports
-  are incompatible with the installed, locked SDK.
-- The repository's original OpenAI minimum version was younger than the required
-  seven-day supply-chain cooldown. Dependencies were resolved under that cooldown
-  and pinned in the lockfile while preserving Python >=3.14.
-- Ausserberg's move-out page is an HTML form. Visible fields are evidence of form
-  shape, not evidence of complete procedural requirements. Shared navigation can
-  contain unrelated permit records; the crawler excludes those navigation texts.
+- The authorized website hostname is exactly `www.ausserberg.ch`. External
+  portal URLs can be retained as handoffs but are never fetched. The OpenAI API
+  connection is separate from website retrieval. `config.yaml` does not widen
+  the website boundary.
+- The two Pydantic AI agents perform discovery and evidence review. Package
+  generation is deterministic; there is no code-generating builder agent.
+  Current defaults use `gpt-6-sol` for discovery and `gpt-6-luna` for review.
+  Earlier live Luna discovery attempts failed schema/evidence checks; this is
+  historical test evidence, not a guarantee about future model behavior.
+- Full-context review precedes snapshot minimization. Source hashes identify
+  retained excerpts and relevant observed links, not original HTML responses.
+  They support reproducible checks but do not prove source authenticity.
+- Form labels and required markers are acquisition observations, not complete
+  procedural requirements. An empty or over-nested optional page is recorded
+  as an acquisition gap; final identity and useful-evidence checks still apply.
+- The crawler permits only a narrow observed Ausserberg PDF handoff query shape
+  (`action=get_file`, numeric `id`, alphanumeric `resource_link_id`). Such URLs
+  are retained as uninspected document links and never fetched.
+- Generated Compose releases use project-scoped image names. Keep distinct
+  project names when deploying or rolling back snapshot releases.
+- Runtime `--check` validates the offline snapshot. `--health-check` negotiates
+  MCP and lists the six tools on the running loopback HTTP server; its port must
+  match the server's port.
+- The locked MCP 2.x SDK uses `MCPServer` as its high-level Python server.

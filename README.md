@@ -45,8 +45,8 @@ per-agent token/tool usage. Diagnostics retain safe validation details, not API 
 
 ## The two agents and their boundaries
 
-1. **Discovery agent** inspects public municipal HTML through `inspect_page` and
-   or explicitly linked public JSON and searches known navigation using
+1. **Discovery agent** inspects public municipal HTML or explicitly linked
+   public JSON through `inspect_page` and searches known navigation using
    `list_sources`. It returns a
    typed inventory with literal excerpts for every fact. Trusted acquisition code
    owns source IDs, hashes, timestamps and website permissions.
@@ -96,6 +96,8 @@ outcome, citations, source retrieval timestamps and an explicit build-time
 snapshot label. `supported` means minimum structured guidance, not completeness.
 Requirements retain their conditions; form fields do not imply an exhaustive
 procedure. Conflicting claims are reported separately from definitive answers.
+A package can have partial coverage when identity and review checks pass and at
+least one capability has evidence-backed data or an official handoff.
 
 Filters match exact identifiers or labels, ignoring case and surrounding spaces.
 Unknown filters return available choices. Zone-dependent waste guidance requires
@@ -115,9 +117,9 @@ conformance tests and independently authored fictional fixtures.
 From a generated directory:
 
 ```sh
-uv sync --locked
-uv run municipality-mcp --discovery discovery.json --transport stdio
-uv run municipality-mcp --discovery discovery.json --transport streamable-http
+uv sync --frozen --no-dev
+uv run --frozen --no-dev municipality-mcp --discovery discovery.json --transport stdio
+uv run --frozen --no-dev municipality-mcp --discovery discovery.json --transport streamable-http
 # Streamable HTTP endpoint: http://127.0.0.1:8000/mcp
 
 docker compose up --build
@@ -165,8 +167,9 @@ Aspire collector. No telemetry service is contacted unless enabled. Application
 logs contain event names and exception types on stderr, never SDK payloads.
 
 The original plan also requests a second municipality. That trial is deferred
-because the current authorization allows only `www.ausserberg.ch`. The shared
-contracts and fixtures exercise service variants without contacting another site.
+because the crawler currently permits only `www.ausserberg.ch`. The shared
+contracts and fictional fixtures exercise service variants without contacting
+another site. See [PLAN.md](PLAN.md) for outstanding validation.
 
 The existing standalone OpenAI connectivity script remains available:
 `uv run python scripts/test_openai.py`.

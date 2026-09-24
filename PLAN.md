@@ -1,9 +1,19 @@
-# Deferred validation and scope
+# Deferred work and validation
 
-- Run the second German-speaking municipality only after explicit authorization
-  expands the website boundary; the current user instruction permits Ausserberg only.
-- Run generated-package Docker launch and OS-isolated conformance when the local
-  Docker daemon is available. Local network-denied subprocess conformance is distinct.
-- PDF/iCalendar parsing, JavaScript/browser rendering,
-  submissions, runtime refresh and public hosting/authentication remain outside
-  the implemented HTML snapshot workflow.
+- A second German-speaking municipality was part of the original MVP acceptance
+  plan, but the current crawler permits only `www.ausserberg.ch`. Expanding that
+  boundary requires explicit authorization and code changes. No second-site
+  result is established by the repository.
+- Generated-package Docker build and launch have not been verified locally in
+  the recorded review. The builder runs offline subprocess conformance; that is
+  distinct from container validation.
+- Live model output still needs source spot-checking for any demonstrated
+  municipality. Deterministic tests and semantic review cannot establish
+  factual accuracy on their own.
+- PDF/iCalendar parsing, JavaScript rendering, form submissions, runtime
+  refresh, and public hosting/authentication remain outside the implemented
+  read-only HTML snapshot workflow.
+
+The implemented commands, boundaries, and tool behavior are documented in
+[README.md](README.md). The original design context is summarized in
+[ideas-patrick/hackathon-mvp-plan.md](ideas-patrick/hackathon-mvp-plan.md).
