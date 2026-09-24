@@ -15,6 +15,7 @@ class AgentMode(StrEnum):
 
     OPENAI = "openai"
     APERTUS = "apertus"
+    PUBLICAI = "publicai"
 
 
 class ModelSettings(BaseModel):
@@ -50,6 +51,17 @@ class ApertusSettings(ModelSettings):
     requests_per_second: float = Field(default=2, gt=0, le=4)
 
 
+class PublicAISettings(ModelSettings):
+    """PublicAI gateway profile, paced below the documented free-tier limit."""
+
+    provider: Literal["publicai"] = "publicai"
+    discovery_model: str = "swiss-ai/apertus-v1.5-70b"
+    review_model: str = "swiss-ai/apertus-v1.5-70b"
+    max_tokens: int = Field(default=8192, ge=512, le=64000)
+    http_retries: int = Field(default=1, ge=0, le=3)
+    requests_per_second: float = Field(default=1, gt=0, le=4)
+
+
 class ExaSettings(BaseModel):
     """Shared retrieval budgets for every model mode."""
 
@@ -76,6 +88,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: AgentMode = AgentMode.OPENAI
     apertus: ApertusSettings = Field(default_factory=ApertusSettings)
+    publicai: PublicAISettings = Field(default_factory=PublicAISettings)
     model: OpenAISettings = Field(default_factory=OpenAISettings)
     web_search_enabled: bool = False
     exa: ExaSettings = Field(default_factory=ExaSettings)
@@ -84,9 +97,13 @@ class Settings(BaseModel):
     run_timeout: float = Field(default=600, gt=0, le=600)
 
     @property
-    def active_model(self) -> OpenAISettings | ApertusSettings:
+    def active_model(self) -> OpenAISettings | ApertusSettings | PublicAISettings:
         """Return the selected profile without modifying the other mode's settings."""
-        return self.apertus if self.mode == AgentMode.APERTUS else self.model
+        if self.mode == AgentMode.APERTUS:
+            return self.apertus
+        if self.mode == AgentMode.PUBLICAI:
+            return self.publicai
+        return self.model
 
 
 def load_settings(path: Path | None = None) -> Settings:

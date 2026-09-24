@@ -42,6 +42,22 @@ def test_unknown_mode_is_rejected() -> None:
         Settings(mode="unknown")
 
 
+def test_publicai_thinking_models_are_independently_configurable(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "mode: publicai\npublicai:\n"
+        "  discovery_model: swiss-ai/apertus-v1.5-70b-thinking\n"
+        "  http_retries: 0\n"
+    )
+    settings = load_settings(path)
+    assert settings.active_model.provider == "publicai"
+    assert settings.active_model.discovery_model == "swiss-ai/apertus-v1.5-70b-thinking"
+    assert settings.active_model.review_model == "swiss-ai/apertus-v1.5-70b"
+    assert settings.active_model.http_retries == 0
+    assert settings.apertus.discovery_model == "swiss-ai/Apertus-v1.5-70B"
+    assert settings.model.discovery_model == "gpt-6-sol"
+
+
 @pytest.mark.parametrize("rate", [0, -1, 5, float("nan"), float("inf")])
 def test_apertus_rate_must_leave_headroom(rate: float) -> None:
     with pytest.raises(ValidationError):

@@ -463,9 +463,18 @@ def usage_limits(settings: Settings) -> UsageLimits:
 async def live_agents(
     settings: Settings, progress: Callable[[str], None] = lambda _: None
 ) -> AsyncIterator[FactoryAgents]:
-    """Create and close SDK clients, pacing every Swisscom attempt including retries."""
-    apertus = settings.mode == AgentMode.APERTUS
-    key_name = "SWISSCOM_KEY" if apertus else "OPENAI_API_KEY"
+    """Create and close SDK clients, pacing Chat Completions providers including retries."""
+    chat = settings.mode != AgentMode.OPENAI
+    profile_settings = settings.active_model
+    key_name, base_url, provider_name = {
+        AgentMode.OPENAI: ("OPENAI_API_KEY", "https://api.openai.com/v1", "OpenAI"),
+        AgentMode.APERTUS: (
+            "SWISSCOM_KEY",
+            "https://api.swisscom.com/products/swiss-ai-weeks/apertus-1.5-70b/v1",
+            "Swisscom",
+        ),
+        AgentMode.PUBLICAI: ("PUBLICAI_API_KEY", "https://api.publicai.co/v1", "PublicAI"),
+    }[settings.mode]
     key = os.getenv(key_name)
     if not key or not key.strip() or key.startswith("your_"):
         raise ModelConfigurationError(
@@ -484,10 +493,10 @@ async def live_agents(
             retry_hint != "false"
             and (response.status_code in {408, 409, 429} or response.status_code >= 500)
         )
-        message = f"Swisscom returned HTTP {response.status_code}"
-        if retryable and retry_count < settings.apertus.http_retries:
+        message = f"{provider_name} returned HTTP {response.status_code}"
+        if retryable and retry_count < profile_settings.http_retries:
             message += (
-                f"; SDK retry {retry_count + 1}/{settings.apertus.http_retries} "
+                f"; SDK retry {retry_count + 1}/{profile_settings.http_retries} "
                 "will respect provider Retry-After/backoff"
             )
         progress(message)
@@ -499,25 +508,23 @@ async def live_agents(
             delay = next_request - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)
-            next_request = time.monotonic() + 1 / settings.apertus.requests_per_second
+            next_request = time.monotonic() + 1 / profile_settings.requests_per_second
 
     async with AsyncOpenAI(
         api_key=key,
-        base_url="https://api.swisscom.com/products/swiss-ai-weeks/apertus-1.5-70b/v1"
-        if apertus
-        else "https://api.openai.com/v1",
+        base_url=base_url,
         timeout=settings.active_model.timeout,
-        max_retries=settings.apertus.http_retries if apertus else settings.active_model.retries,
+        max_retries=profile_settings.http_retries if chat else profile_settings.retries,
         http_client=AsyncClient(
             trust_env=False,
             follow_redirects=False,
             event_hooks={"request": [pace_request], "response": [report_response]}
-            if apertus
+            if chat
             else None,
         ),
     ) as client:
         adapter = OpenAIProvider(openai_client=client)
-        if apertus:
+        if chat:
             profile = OpenAIModelProfile(openai_supports_strict_tool_definition=False)
             first = OpenAIChatModel(
                 settings.active_model.discovery_model, provider=adapter, profile=profile

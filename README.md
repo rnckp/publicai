@@ -127,6 +127,40 @@ request pacing. OpenAI strict output-schema mode is not requested for Apertus.
 Offline tests verify the integration; model quality must be assessed from real runs
 and their `metrics.json`, `discovery-report.json`, and failure diagnostics.
 
+## Alternative Apertus route through PublicAI
+
+Set `PUBLICAI_API_KEY` in `.env` and select the independent PublicAI profile:
+
+```sh
+uv run factory run https://www.ausserberg.ch/ --out artifacts --mode publicai
+```
+
+This uses the OpenAI SDK with `https://api.publicai.co/v1`, Chat Completions,
+and the SDK integration's User-Agent header required by the
+[PublicAI API](https://platform.publicai.co/docs). Swisscom remains available
+with `--mode apertus`; credentials and provider routes never fall back automatically.
+Set `mode: publicai` for the default, and tune the separate `publicai:` section.
+The default pacing is one request per second, shared by both agents and retries.
+
+PublicAI lists both `swiss-ai/apertus-v1.5-70b` and
+`swiss-ai/apertus-v1.5-70b-thinking` in its
+[model catalogue](https://platform.publicai.co/models). Thinking is selected by
+model ID, independently for each agent, for example:
+
+```yaml
+mode: publicai
+publicai:
+  discovery_model: swiss-ai/apertus-v1.5-70b-thinking
+  review_model: swiss-ai/apertus-v1.5-70b-thinking
+  max_tokens: 8192
+```
+
+For a single run, use `--mode publicai --model swiss-ai/apertus-v1.5-70b-thinking`
+to select thinking for both agents, or `--discovery-model` / `--review-model`
+to change only one. OpenAI's `reasoning_effort` setting is not sent to PublicAI.
+Thinking may increase latency and token usage; compare actual run quality before
+changing the default. Adjust `publicai.max_tokens` and `timeout` as needed.
+
 ## The two agents and their boundaries
 
 1. **Discovery agent** searches Exa for municipal pages and retrieves their

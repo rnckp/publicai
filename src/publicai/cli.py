@@ -39,7 +39,7 @@ def _settings(
             from publicai.agents import ModelConfigurationError
 
             raise ModelConfigurationError(
-                "--model apertus conflicts with --mode openai; use --mode apertus."
+                f"--model apertus conflicts with --mode {mode.value}; use --mode apertus."
             )
         mode = AgentMode.APERTUS
         model = None
@@ -126,7 +126,7 @@ def discover(
     out: Annotated[Path, typer.Option(help="Artifact root; each run creates a unique directory.")],
     config: Annotated[Path | None, typer.Option()] = None,
     mode: Annotated[
-        AgentMode | None, typer.Option(help="Select the OpenAI or Apertus profile.")
+        AgentMode | None, typer.Option(help="Select openai, apertus (Swisscom), or publicai.")
     ] = None,
     model: Annotated[
         str | None,
@@ -173,7 +173,7 @@ def run(
     out: Annotated[Path, typer.Option()],
     config: Annotated[Path | None, typer.Option()] = None,
     mode: Annotated[
-        AgentMode | None, typer.Option(help="Select the OpenAI or Apertus profile.")
+        AgentMode | None, typer.Option(help="Select openai, apertus (Swisscom), or publicai.")
     ] = None,
     model: Annotated[
         str | None,

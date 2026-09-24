@@ -1,5 +1,13 @@
 # Durable implementation notes
 
+- PublicAI is an explicit independent mode using PUBLICAI_API_KEY and the OpenAI
+  SDK at https://api.publicai.co/v1. Its Apertus IDs are lowercase, unlike the
+  Swisscom IDs. Select thinking per agent with the -thinking model suffix;
+  OpenAI reasoning_effort is not forwarded. A live 70B thinking tool-output smoke
+  test passed; no end-to-end PublicAI run or quality comparison is established.
+  Pydantic AI supplies its own versioned User-Agent, overriding SDK defaults;
+  this satisfies PublicAI's required header and is checked at the wire boundary.
+
 - A September 2026 Swisscom discovery-schema probe with fictional evidence and
   max_tokens=32000 returned HTTP 429; equivalent 512/8192-token probes succeeded
   in about 11 seconds. This suggests token allowance contributes to admission,

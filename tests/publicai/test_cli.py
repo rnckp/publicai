@@ -191,7 +191,7 @@ def test_cli_model_selection(
 
 
 @pytest.mark.parametrize("command", ["discover", "run"])
-@pytest.mark.parametrize("mode", ["openai", "apertus"])
+@pytest.mark.parametrize("mode", ["openai", "apertus", "publicai"])
 def test_cli_mode_overrides_config_and_preserves_model_overrides(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, mode: str
 ) -> None:
@@ -231,7 +231,7 @@ def test_cli_mode_overrides_config_and_preserves_model_overrides(
         ],
     )
     assert result.exit_code == 0, result.output
-    assert selected == [(mode, "swisscom" if mode == "apertus" else "openai", "shared", "specific")]
+    assert selected == [(mode, "swisscom" if mode == "apertus" else mode, "shared", "specific")]
 
 
 @pytest.mark.parametrize("command", ["discover", "run"])
