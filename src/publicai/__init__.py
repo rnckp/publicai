@@ -1,2 +1,8 @@
+"""Evidence-backed municipality MCP server factory."""
+
+
 def main() -> None:
-    print("Hello from publicai!")
+    """Launch the Typer factory application."""
+    from publicai.cli import app
+
+    app()

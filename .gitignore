@@ -175,3 +175,7 @@ cython_debug/
 
 # Repo specific files
 .DS_Store
+
+# Local discovery snapshots, built packages and telemetry credentials
+artifacts/
+.logfire/
