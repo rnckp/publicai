@@ -1,5 +1,5 @@
 FROM ghcr.io/astral-sh/uv:0.12.16 AS uv
-FROM python:3.14.0-slim-bookworm AS build
+FROM python:3.14.7-slim-bookworm AS build
 COPY --from=uv /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 WORKDIR /app
@@ -8,7 +8,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
-FROM python:3.14.0-slim-bookworm AS runtime
+FROM python:3.14.7-slim-bookworm AS runtime
 RUN groupadd --gid 10001 municipality && useradd --uid 10001 --gid 10001 --no-create-home municipality
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /app /app
