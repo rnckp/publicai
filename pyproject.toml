@@ -8,8 +8,17 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "anyio>=4.15.1",
+    "httpcore>=1.0.9",
+    "httpx>=0.28.1",
+    "logfire>=5.1.0",
+    "mcp>=2.2.0",
     "openai>=3.19.2",
+    "pydantic>=2.13.5",
+    "pydantic-ai>=2.49.0",
+    "pydantic-ai-slim[openai,openrouter]>=2.49.0",
     "python-dotenv>=1.2.3",
+    "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "typer>=0.27.2",
 ]
@@ -20,3 +29,11 @@ publicai = "publicai:main"
 [build-system]
 requires = ["uv_build>=0.12.16,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.8",
+]
