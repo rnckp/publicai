@@ -56,6 +56,41 @@ def test_cli_reports_safe_discovery_failure_reason(
     assert "diagnostic.json" in output
 
 
+def test_cli_shows_review_findings_without_model_reasons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", False)
+    agents, retained = fixture_agents(Settings(), approve=False)
+
+    @asynccontextmanager
+    async def model_boundary(settings: Settings, progress: object) -> AsyncIterator[FactoryAgents]:
+        yield agents
+
+    class OfflineCrawler(RetainedCrawler):
+        def __init__(self, settings: object, exa: object, **kwargs: object) -> None:
+            super().__init__(retained.sources)
+
+        async def __aenter__(self) -> Self:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr("publicai.pipeline.live_agents", model_boundary)
+    monkeypatch.setattr("publicai.pipeline.ExaRetriever", OfflineCrawler)
+    result = CliRunner().invoke(
+        app, ["discover", "https://www.ausserberg.ch/", "--out", str(tmp_path)]
+    )
+    assert result.exit_code == 1
+    assert "Evidence review failures" in result.output
+    assert "identity.name" in result.output
+    assert "missing" in result.output
+    assert "Reviewer explanations:" in result.output
+    assert "Fixture evidence" not in result.output
+    assert '"timestamp"' not in result.output
+    assert "Discovery failed (ReviewValidationError)" in result.output
+
+
 @pytest.fixture(autouse=True)
 def restore_cli_logger(monkeypatch: pytest.MonkeyPatch) -> None:
     """Do not leave a logger pointing to CliRunner's closed capture stream."""
@@ -108,6 +143,9 @@ def test_normal_run_creates_discovery_and_tested_package(
     positions = [result.output.index(message) for message in milestones]
     assert positions == sorted(positions)
     assert "input tokens" in result.output
+    assert '"timestamp"' not in result.output
+    assert "evidence review" in result.output.lower()
+    assert "Total incl. identity" in result.output
     assert "elapsed" in result.output
     assert len(list(tmp_path.glob("discovery-*/discovery.json"))) == 1
     assert len(list(tmp_path.glob("build-*/manifest.json"))) == 1

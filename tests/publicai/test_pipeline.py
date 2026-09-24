@@ -170,6 +170,30 @@ async def test_incomplete_semantic_review_never_publishes(
     assert not list(tmp_path.glob(".staging-*"))
 
 
+async def test_review_trace_shows_claim_decisions_without_model_text(tmp_path: Path) -> None:
+    agents, crawler = fixture_agents(Settings())
+    updates: list[str] = []
+    path = await discover_with_agents(
+        "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler, updates.append
+    )
+    assert path.is_file()
+    assert any("Evidence identity: consistent" in update for update in updates)
+    assert any("identity.name: supported" in update and "citation" in update for update in updates)
+    assert any("Evidence review summary:" in update for update in updates)
+    assert all("Fixture evidence" not in update for update in updates)
+
+
+async def test_review_trace_shows_missing_checks_before_rejection(tmp_path: Path) -> None:
+    agents, crawler = fixture_agents(Settings(), approve=False)
+    updates: list[str] = []
+    with pytest.raises(DiscoveryError):
+        await discover_with_agents(
+            "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler, updates.append
+        )
+    assert any("identity.name: missing review check" in update for update in updates)
+    assert any("Evidence review summary:" in update and "missing=" in update for update in updates)
+
+
 def test_minimization_removes_uncited_text_and_links() -> None:
     from publicai.contracts import load_discovery
     from publicai.pipeline import minimize_sources

@@ -332,7 +332,15 @@ Telemetry is off by default. `config.yaml` can opt into Logfire instrumentation
 with model/tool content and binary payloads disabled. `send_to_logfire: true`
 requires `LOGFIRE_TOKEN`; standard `OTEL_EXPORTER_OTLP_*` settings can target an
 Aspire collector. No telemetry service is contacted unless enabled. Application
-logs contain event names and exception types on stderr, never SDK payloads.
+logs contain event names, review decisions, citation counts, source IDs, and
+exception types when a JSON logging handler is used, never SDK payloads or
+model-authored explanations. The CLI shows each claim's evidence-review result
+through Rich without mixing raw JSON into the spinner, then prints coverage and
+evidence tables with entries, claims, citations, sources, review results, and
+gaps. Failed reviews show the affected claim paths and the diagnostic
+`review.json` path, which retains the reviewer's explanations.
+When telemetry is enabled, evidence validation wraps the review agent in a
+span with run, claim, and source counts; model and tool content remain disabled.
 
 A live second-municipality trial has not been run. Offline tests now cover host
 selection and source validation for Riehen without contacting its site. See

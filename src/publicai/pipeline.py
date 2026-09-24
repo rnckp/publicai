@@ -6,12 +6,14 @@ import json
 import logging
 import shutil
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+import logfire
 from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart
@@ -19,6 +21,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart
 from publicai.agents import (
     DiscoveryContext,
     FactoryAgents,
+    ReviewDecision,
     ReviewValidationError,
     claim_records,
     live_agents,
@@ -41,6 +44,81 @@ from publicai.crawler import CrawlError, SafeCrawler, validate_url
 from publicai.retrieval import ExaRetriever
 
 logger = logging.getLogger(__name__)
+
+
+def trace_evidence_review(
+    decision: ReviewDecision,
+    claims: dict[str, dict],
+    discovery_id: str,
+    progress: Callable[[str], None],
+) -> dict:
+    """Show bounded review decisions without emitting claims or model-authored prose."""
+    identity = "consistent" if decision.identity_consistent else "inconsistent"
+    progress(f"Evidence identity: {identity}")
+    logger.info(
+        "evidence_review_identity",
+        extra={"discovery_id": discovery_id, "review_status": identity},
+    )
+    checks_by_path: dict[str, list[str]] = {}
+    for check in decision.checks:
+        if check.path in claims:
+            checks_by_path.setdefault(check.path, []).append(check.status)
+
+    counts = {"supported": 0, "conflicting": 0, "unsupported": 0, "missing": 0, "duplicate": 0}
+    findings = []
+    current_group = ""
+    for path, claim in claims.items():
+        group = ".".join(path.split(".")[:2]) if path.startswith("capabilities.") else "identity"
+        if group != current_group:
+            current_group = group
+            progress(f"Evidence section: {group}")
+        statuses = checks_by_path.get(path, [])
+        status = statuses[0] if len(statuses) == 1 else "duplicate" if statuses else "missing"
+        counts[status] += 1
+        if status != "supported":
+            findings.append({"path": path, "status": status})
+        evidence = claim.get("evidence", [])
+        source_ids = sorted({ref["source_id"] for ref in evidence})
+        citation_count = len(evidence)
+        detail = f"{citation_count} citation(s) across {len(source_ids)} source(s)"
+        if status == "missing":
+            progress(f"  {path}: missing review check; {detail}")
+        else:
+            progress(f"  {path}: {status}; {detail}")
+        logger.info(
+            "evidence_review_claim",
+            extra={
+                "discovery_id": discovery_id,
+                "claim_path": path,
+                "review_status": status,
+                "citation_count": citation_count,
+                "source_ids": source_ids,
+            },
+        )
+    unexpected = sum(check.path not in claims for check in decision.checks)
+    summary = (
+        f"Evidence review summary: {len(claims)} claims; "
+        + ", ".join(f"{key}={value}" for key, value in counts.items())
+        + f", unexpected={unexpected}, blocking_issues={len(decision.issues)}"
+    )
+    progress(summary)
+    logger.info(
+        "evidence_review_summary",
+        extra={
+            "discovery_id": discovery_id,
+            "claim_count": len(claims),
+            "review_counts": counts,
+            "unexpected_checks": unexpected,
+            "blocking_issues": len(decision.issues),
+        },
+    )
+    return {
+        "identity_consistent": decision.identity_consistent,
+        "counts": counts,
+        "unexpected_checks": unexpected,
+        "blocking_issues": len(decision.issues),
+        "findings": findings,
+    }
 
 
 def discovery_report(
@@ -170,6 +248,8 @@ async def discover_with_agents(
     staging.mkdir()
     context = DiscoveryContext(crawler, url, discovery_id, datetime.now(UTC), progress=progress)
     decision = None
+    review_trace = None
+    claims = {}
     discovery = None
     acquisition_stop_reason = None
     started = monotonic()
@@ -223,13 +303,25 @@ async def discover_with_agents(
             )
             progress(f"Review agent: checking {len(claims)} claims against retained evidence")
             stage = "review"
-            review_result = await agents.reviewer.run(
-                review_prompt(result.output, context.sources),
-                deps=context.sources,
-                usage_limits=usage_limits(settings),
+            review_span = (
+                logfire.span(
+                    "Evidence validation",
+                    discovery_id=discovery_id,
+                    claim_count=len(claims),
+                    source_count=len(context.sources),
+                )
+                if settings.telemetry.enabled
+                else nullcontext()
             )
-            decision = review_result.output
-            validate_review(decision, claims)
+            with review_span:
+                review_result = await agents.reviewer.run(
+                    review_prompt(result.output, context.sources),
+                    deps=context.sources,
+                    usage_limits=usage_limits(settings),
+                )
+                decision = review_result.output
+                review_trace = trace_evidence_review(decision, claims, discovery_id, progress)
+                validate_review(decision, claims)
             progress(f"Evidence review passed: {len(claims)} claims checked")
             progress(
                 f"Review usage: {review_result.usage.requests} model requests, "
@@ -299,6 +391,7 @@ async def discover_with_agents(
             "request_count": crawler.request_count,
             "failures": [failure.model_dump() for failure in crawler.failures],
             "validation_issues": context.validation_issues,
+            "review_trace": review_trace,
             "model_responses": [
                 {
                     "input_tokens": message.usage.input_tokens,
