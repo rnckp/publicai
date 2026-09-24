@@ -3,17 +3,40 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from io import StringIO
 from pathlib import Path
 from typing import Self
 
 import pytest
 from pydantic_ai import models
+from rich.console import Console
 from test_pipeline import RetainedCrawler, fixture_agents
 from typer.testing import CliRunner
 
 from publicai.agents import FactoryAgents
 from publicai.cli import app
 from publicai.config import Settings
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+def test_progress_is_visible_before_work_finishes_and_cleans_up_on_error(
+    monkeypatch: pytest.MonkeyPatch, terminal: bool
+) -> None:
+    from publicai.cli import _live_progress
+
+    output = StringIO()
+    console = Console(file=output, force_terminal=terminal, width=160)
+    monkeypatch.setattr("publicai.cli.console", console)
+    with pytest.raises(ValueError, match="stage failed"):
+        with _live_progress() as progress:
+            progress("Waiting for evidence [literal]")
+            assert "Waiting for evidence [literal]" in output.getvalue()
+            assert "elapsed" in output.getvalue()
+            raise ValueError("stage failed")
+    console.print("Failure diagnostic")
+    assert output.getvalue().endswith("Failure diagnostic\n")
+    if not terminal:
+        assert "\x1b" not in output.getvalue()
 
 
 def test_cli_reports_safe_discovery_failure_reason(
@@ -67,6 +90,25 @@ def test_normal_run_creates_discovery_and_tested_package(
     result = CliRunner().invoke(app, ["run", "https://www.ausserberg.ch/", "--out", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "Discovery:" in result.output and "Package:" in result.output
+    milestones = [
+        "Connecting discovery services",
+        "Retrieving homepage",
+        "Evidence ready:",
+        "Discovery agent:",
+        "Discovery complete:",
+        "Review agent:",
+        "Evidence review passed:",
+        "Publishing reviewed discovery",
+        "Build: validating discovery",
+        "Build: rendering MCP package",
+        "Build: running offline conformance",
+        "Build: conformance passed",
+        "Build: package published",
+    ]
+    positions = [result.output.index(message) for message in milestones]
+    assert positions == sorted(positions)
+    assert "input tokens" in result.output
+    assert "elapsed" in result.output
     assert len(list(tmp_path.glob("discovery-*/discovery.json"))) == 1
     assert len(list(tmp_path.glob("build-*/manifest.json"))) == 1
 
@@ -130,7 +172,7 @@ def test_cli_model_selection(
         return Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
 
     monkeypatch.setattr("publicai.pipeline.discover", capture_settings)
-    monkeypatch.setattr("publicai.builder.build", lambda path, out: path.parent)
+    monkeypatch.setattr("publicai.builder.build", lambda path, out, **kwargs: path.parent)
     monkeypatch.setattr("publicai.cli._coverage", lambda path: None)
     result = CliRunner().invoke(
         app,
@@ -169,7 +211,7 @@ def test_cli_mode_overrides_config_and_preserves_model_overrides(
         return Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
 
     monkeypatch.setattr("publicai.pipeline.discover", capture_settings)
-    monkeypatch.setattr("publicai.builder.build", lambda path, out: path.parent)
+    monkeypatch.setattr("publicai.builder.build", lambda path, out, **kwargs: path.parent)
     monkeypatch.setattr("publicai.cli._coverage", lambda path: None)
     result = CliRunner().invoke(
         app,

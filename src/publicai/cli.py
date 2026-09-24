@@ -1,12 +1,16 @@
 """Typer/Rich commands for municipality discovery and deterministic MCP packaging."""
 
 import asyncio
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from time import monotonic
 from typing import Annotated
 
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -42,8 +46,31 @@ def _settings(
     return settings
 
 
-def _progress(message: str) -> None:
-    console.print(message, style="cyan", markup=False)
+@contextmanager
+def _live_progress() -> Iterator[Callable[[str], None]]:
+    """Stream lasting milestones and show elapsed time while a stage is busy."""
+    started = monotonic()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("{task.description}", markup=False),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+        disable=not console.is_terminal,
+    ) as progress:
+        task = progress.add_task("Starting", total=None)
+
+        def report(message: str) -> None:
+            console.print(
+                f"[{monotonic() - started:6.1f}s elapsed] {message}",
+                style="cyan",
+                markup=False,
+                highlight=False,
+                soft_wrap=True,
+            )
+            progress.update(task, description=message)
+
+        yield report
 
 
 def _coverage(path: Path) -> None:
@@ -106,7 +133,9 @@ def discover(
 
     try:
         settings = _settings(config, model, discovery_model, review_model, mode)
-        path = asyncio.run(discover_pipeline(url, out, settings, _progress))
+        with _live_progress() as progress:
+            progress("Connecting discovery services")
+            path = asyncio.run(discover_pipeline(url, out, settings, progress))
         _coverage(path)
         console.print(f"Discovery: {path}", markup=False)
     except Exception as error:
@@ -119,7 +148,8 @@ def build(discovery_json: Path, out: Annotated[Path, typer.Option()]) -> None:
     from publicai.builder import build as build_package
 
     try:
-        package = build_package(discovery_json, out)
+        with _live_progress() as progress:
+            package = build_package(discovery_json, out, progress=progress)
         _coverage(package / "discovery.json")
         console.print(f"Package: {package}", markup=False)
     except Exception as error:
@@ -150,9 +180,11 @@ def run(
 
     try:
         settings = _settings(config, model, discovery_model, review_model, mode)
-        path = asyncio.run(discover_pipeline(url, out, settings, _progress))
-        _progress("Building the fixed MCP template and running offline conformance")
-        package = build_package(path, out)
+        with _live_progress() as progress:
+            progress("Connecting discovery services")
+            path = asyncio.run(discover_pipeline(url, out, settings, progress))
+            progress(f"Discovery saved: {path}")
+            package = build_package(path, out, progress=progress)
         _coverage(package / "discovery.json")
         console.print(f"Discovery: {path}\nPackage: {package}", markup=False)
     except Exception as error:

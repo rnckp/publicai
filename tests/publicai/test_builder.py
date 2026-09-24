@@ -206,10 +206,14 @@ def test_failed_conformance_removes_staging_without_publishing(
         raise ValueError("Simulated conformance failure")
 
     monkeypatch.setattr("publicai.builder._run_conformance", fail_conformance)
+    updates: list[str] = []
 
     with pytest.raises(BuildError) as error:
-        build(FIXTURE, tmp_path)
+        build(FIXTURE, tmp_path, progress=updates.append)
 
+    assert updates[-1].startswith("Build: running offline conformance")
+    assert not any("conformance passed" in update for update in updates)
+    assert not any("package published" in update for update in updates)
     assert "conformance failure" in error.value.diagnostic_path.read_text(encoding="utf-8")
     assert len(list(tmp_path.iterdir())) == 1
     assert error.value.diagnostic_path.parent.parent == tmp_path

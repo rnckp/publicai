@@ -146,10 +146,14 @@ async def test_incomplete_semantic_review_never_publishes(
 ) -> None:
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", False)
     agents, crawler = fixture_agents(Settings(), approve=False)
+    updates: list[str] = []
     with pytest.raises(DiscoveryError) as error:
         await discover_with_agents(
-            "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler
+            "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler, updates.append
         )
+    assert updates[-1].startswith("Discovery stopped during review: ReviewValidationError;")
+    assert not any("Evidence review passed" in update for update in updates)
+    assert not any("Publishing reviewed discovery" in update for update in updates)
     assert error.value.diagnostic_path.is_file()
     diagnostic = json.loads(error.value.diagnostic_path.read_text())
     assert diagnostic["message"] == "Semantic review must check every claim exactly once."

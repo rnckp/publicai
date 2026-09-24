@@ -164,6 +164,11 @@ async def discover_with_agents(
                 context.retain(page)
             for candidate in crawler.discovered_urls:
                 context.links.setdefault(candidate, {"url": candidate, "label": "", "kind": "html"})
+            progress(
+                f"Evidence ready: {len(context.sources)} sources retained; "
+                f"{crawler.request_count}/{settings.crawl.max_requests} acquisition requests used; "
+                f"{len(crawler.failures)} retrieval failures"
+            )
             progress("Discovery agent: extracting the six evidence-backed capabilities")
             stage = "discovery"
             with capture_run_messages() as messages:
@@ -184,6 +189,16 @@ async def discover_with_agents(
                 DiscoveryFailure(**failure.model_dump()) for failure in crawler.failures
             ]
             claims = claim_records(result.output.model_dump(mode="json"))
+            progress(
+                f"Discovery complete: {len(context.sources)} sources inspected; "
+                f"{len(claims)} claims to review; "
+                f"{crawler.request_count}/{settings.crawl.max_requests} acquisition requests used"
+            )
+            progress(
+                f"Discovery usage: {result.usage.requests} model requests, "
+                f"{result.usage.tool_calls} tool calls, {result.usage.input_tokens} input tokens, "
+                f"{result.usage.output_tokens} output tokens"
+            )
             progress(f"Review agent: checking {len(claims)} claims against retained evidence")
             stage = "review"
             review_result = await agents.reviewer.run(
@@ -193,10 +208,18 @@ async def discover_with_agents(
             )
             decision = review_result.output
             validate_review(decision, claims)
+            progress(f"Evidence review passed: {len(claims)} claims checked")
+            progress(
+                f"Review usage: {review_result.usage.requests} model requests, "
+                f"{review_result.usage.tool_calls} tool calls, "
+                f"{review_result.usage.input_tokens} input tokens, "
+                f"{review_result.usage.output_tokens} output tokens"
+            )
             discovery.review = ReviewMetadata(
                 status="passed", agent="municipality_evidence_review", checked_at=datetime.now(UTC)
             )
             stage = "publication"
+            progress("Publishing reviewed discovery, evidence report and usage metrics")
             # Revalidate after trusted metadata additions before publishing.
             discovery = minimize_sources(Discovery.model_validate(discovery.model_dump()))
             (staging / "discovery.json").write_text(
@@ -295,6 +318,10 @@ async def discover_with_agents(
                 decision.model_dump_json(indent=2), encoding="utf-8"
             )
         logger.error("discovery_failed", extra={"error_type": type(error).__name__})
+        progress(
+            f"Discovery stopped during {stage}: {type(error).__name__}; "
+            f"{crawler.request_count}/{settings.crawl.max_requests} acquisition requests used"
+        )
         raise DiscoveryError(payload["message"], diagnostic_path) from error
     finally:
         if staging.exists():

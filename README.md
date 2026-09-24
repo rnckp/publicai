@@ -20,10 +20,23 @@ Set `OPENAI_API_KEY` and `EXA_API_KEY` in `.env`. Both Pydantic AI agents use th
 effort. Model IDs and reasoning effort are configurable in `config.yaml`. Discovery
 uses Sol because live Luna runs failed the schema and evidence checks.
 
+Run discovery and build in one step, including evidence review and offline
+conformance checks:
+
+```sh
+uv run factory run https://www.ausserberg.ch/ --out artifacts
+```
+
+While running, the CLI prints elapsed-time milestones, source/request counts,
+agent token usage as each agent finishes, and build/conformance stages. Interactive
+terminals also show a spinner and running timer during waits. Redirected output
+keeps plain progress lines on stderr.
+
+Or run the steps separately to build from an existing discovery:
+
 ```sh
 uv run factory discover https://www.ausserberg.ch/ --out artifacts
 uv run factory build artifacts/discovery-<id>/discovery.json --out artifacts
-uv run factory run https://www.ausserberg.ch/ --out artifacts
 ```
 
 `publicai` is an alias for the same CLI. Set each step's default in `config.yaml`:

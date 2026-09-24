@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -421,12 +421,18 @@ def _manifest(package: Path, discovery: Discovery, build_id: str) -> None:
     )
 
 
-def build(discovery_path: Path, out: Path) -> Path:
+def build(
+    discovery_path: Path,
+    out: Path,
+    *,
+    progress: Callable[[str], None] = lambda _: None,
+) -> Path:
     """Validate, test, and atomically publish a new snapshot package.
 
     Args:
         discovery_path: Versioned discovery artifact to validate.
         out: Artifact root, where each successful build gets a unique directory.
+        progress: Receives safe stage updates while the build is running.
 
     Returns:
         The newly published package directory.
@@ -441,6 +447,7 @@ def build(discovery_path: Path, out: Path) -> Path:
     staging = out / f".staging-{build_id}"
     package = out / build_id
     try:
+        progress("Build: validating discovery and packaging requirements")
         if discovery_path.stat().st_size > _MAX_DISCOVERY_BYTES:
             raise ValueError("Discovery exceeds the 25 MiB artifact limit")
         discovery = load_discovery(discovery_path)
@@ -448,10 +455,14 @@ def build(discovery_path: Path, out: Path) -> Path:
         if issues:
             raise ValueError("Discovery cannot be packaged: " + "; ".join(issues))
         staging.mkdir()
+        progress("Build: rendering MCP package, documentation and fixtures")
         _stage_package(staging, discovery, build_id)
+        progress("Build: running offline conformance in a separate Python process")
         _run_conformance(staging)
+        progress("Build: conformance passed; hashing files and publishing package")
         _manifest(staging, discovery, build_id)
         staging.rename(package)
+        progress("Build: package published")
         return package
     except (OSError, ValueError, ValidationError, subprocess.SubprocessError) as error:
         if staging.exists():
