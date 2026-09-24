@@ -591,6 +591,17 @@ class SafeCrawler:
     ) -> None:
         await self._client.__aexit__(exc_type, exc, traceback)
 
+    @property
+    def budget_stop_reason(
+        self,
+    ) -> Literal["time_budget_exhausted", "request_budget_exhausted"] | None:
+        """Report only global acquisition budgets, not page size or redirect limits."""
+        if time.monotonic() - self._started >= self.settings.run_timeout:
+            return "time_budget_exhausted"
+        if self.request_count >= self.settings.max_requests:
+            return "request_budget_exhausted"
+        return None
+
     def _remaining(self) -> float:
         remaining = self.settings.run_timeout - (time.monotonic() - self._started)
         if remaining <= 0 or self.request_count >= self.settings.max_requests:

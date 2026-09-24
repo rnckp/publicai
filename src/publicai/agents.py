@@ -1,5 +1,7 @@
 """Two bounded Pydantic AI agents: website discovery and offline evidence review."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os
@@ -9,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from pydantic import Field, ValidationError
@@ -36,6 +38,67 @@ from publicai.contracts import (
 from publicai.crawler import ALLOWED_HOST, CrawlError, FetchedPage, SafeCrawler
 
 PROMPTS = Path(__file__).with_name("prompts")
+_SERVICE_TERMS = (
+    "abfall",
+    "kehricht",
+    "recycling",
+    "entsorgung",
+    "sammelstelle",
+    "zuzug",
+    "wegzug",
+    "anmeldung",
+    "abmeldung",
+    "umzug",
+    "öffnungszeit",
+    "oeffnungszeit",
+    "kanzlei",
+    "kontakt",
+    "impressum",
+    "schaden",
+    "mängel",
+    "maengel",
+    "meldung",
+)
+
+
+def rank_source_links(links: list[dict[str, str]], query: str = "") -> list[dict[str, str]]:
+    """Rank specific labels and URL leaves above shared paths; retain every matching lead.
+
+    This only orders discovery candidates. It never classifies services or changes
+    acquisition permissions, and it permits one page to support multiple services.
+    """
+    terms = query.casefold().split()
+
+    def score(link: dict[str, str]) -> tuple[int, int]:
+        label = link["label"].casefold()
+        leaf = unquote(urlsplit(link["url"]).path).rstrip("/").rsplit("/", 1)[-1].casefold()
+        specific = sum(2 * (term in label) + (term in leaf) for term in terms)
+        service = sum(2 * (term in label) + (term in leaf) for term in _SERVICE_TERMS)
+        return specific, service
+
+    candidates = [
+        link
+        for link in links
+        if not terms
+        or any(term in (unquote(link["url"]) + " " + link["label"]).casefold() for term in terms)
+    ]
+    return sorted(candidates, key=score, reverse=True)
+
+
+def review_prompt(inventory: Inventory, sources: dict[str, SourceSnapshot]) -> str:
+    """Build the same review input for production and independently labeled evaluations."""
+    payload = inventory.model_dump(mode="json")
+    return "Review this inventory and every listed claim path.\n" + json.dumps(
+        {
+            "inventory": payload,
+            "claims": claim_records(payload),
+            "sources": [
+                {"id": source.id, "url": source.url, "kind": source.kind}
+                for source in sources.values()
+            ],
+        },
+        ensure_ascii=False,
+    )
 
 
 class ModelConfigurationError(ValueError):
@@ -299,13 +362,7 @@ def create_agents(
     def list_sources(ctx: RunContext[DiscoveryContext], query: str = "") -> dict[str, Any]:
         """Find known navigation links or inspected sources by literal German keywords."""
         ctx.deps.progress("Discovery tool: list_sources")
-        terms = query.casefold().split()
-        links = [
-            link
-            for link in ctx.deps.links.values()
-            if not terms
-            or any(term in (link["url"] + " " + link["label"]).casefold() for term in terms)
-        ]
+        links = rank_source_links(list(ctx.deps.links.values()), query)
         return {
             "sources": [
                 {
@@ -317,7 +374,11 @@ def create_agents(
                 for source in ctx.deps.sources.values()
             ],
             "links": links[:150],
+            "matching_links": len(links),
+            "links_truncated": len(links) > 150,
             "requests_used": ctx.deps.crawler.request_count,
+            "request_budget": ctx.deps.crawler.settings.max_requests,
+            "budget_stop_reason": ctx.deps.crawler.budget_stop_reason,
         }
 
     @discoverer.output_validator

@@ -20,6 +20,7 @@ from publicai.agents import (
     ReviewValidationError,
     claim_records,
     live_agents,
+    review_prompt,
     usage_limits,
     validate_review,
 )
@@ -29,6 +30,7 @@ from publicai.contracts import (
     Discovery,
     DiscoveryFailure,
     ReviewMetadata,
+    discovery_status,
     evidence_refs,
     facts,
     normalize_whitespace,
@@ -36,6 +38,49 @@ from publicai.contracts import (
 from publicai.crawler import SafeCrawler, validate_url
 
 logger = logging.getLogger(__name__)
+
+
+def discovery_report(
+    context: DiscoveryContext,
+    discovery: Discovery | None,
+    settings: Settings,
+    *,
+    stop_reason: str,
+    acquisition_stop_reason: str | None,
+    published: bool,
+) -> dict:
+    """Summarize trusted acquisition and candidate coverage without claiming search completeness."""
+    capabilities = discovery.capabilities if discovery else {}
+    return {
+        "discovery_id": context.discovery_id,
+        "publication_status": "published" if published else "failed",
+        "review_status": discovery.review.status if discovery else "not_run",
+        "stop_reason": stop_reason,
+        "acquisition_stop_reason": acquisition_stop_reason,
+        "website_requests": context.crawler.request_count,
+        "request_budget": settings.crawl.max_requests,
+        "sources_inspected": len(context.sources),
+        "sources_cited": len({ref.source_id for ref in evidence_refs(discovery)})
+        if discovery
+        else 0,
+        "capabilities": {
+            key: {
+                "coverage": capability.coverage,
+                "discovery_status": discovery_status(capability),
+                "missing_reasons": capability.missing_reasons,
+            }
+            for key, capability in capabilities.items()
+        },
+        "unresolved_capabilities": [
+            key
+            for key, capability in capabilities.items()
+            if capability.coverage != "supported"
+            and discovery_status(capability) != "explicitly_not_offered"
+        ]
+        if discovery
+        else None,
+        "failures": [failure.model_dump() for failure in context.crawler.failures],
+    }
 
 
 class DiscoveryError(ValueError):
@@ -102,6 +147,8 @@ async def discover_with_agents(
     staging.mkdir()
     context = DiscoveryContext(crawler, url, discovery_id, datetime.now(UTC), progress=progress)
     decision = None
+    discovery = None
+    acquisition_stop_reason = None
     started = monotonic()
     messages = []
     stage = "acquisition"
@@ -130,6 +177,7 @@ async def discover_with_agents(
                     usage_limits=usage_limits(settings),
                 )
             discovery = context.inventory(result.output)
+            acquisition_stop_reason = crawler.budget_stop_reason
             # Facts and fetch failures come through separate trust boundaries.
             discovery.failures = [
                 DiscoveryFailure(**failure.model_dump()) for failure in crawler.failures
@@ -138,18 +186,7 @@ async def discover_with_agents(
             progress(f"Review agent: checking {len(claims)} claims against retained evidence")
             stage = "review"
             review_result = await agents.reviewer.run(
-                "Review this inventory and every listed claim path.\n"
-                + json.dumps(
-                    {
-                        "inventory": result.output.model_dump(mode="json"),
-                        "claims": claims,
-                        "sources": [
-                            {"id": source.id, "url": source.url, "kind": source.kind}
-                            for source in context.sources.values()
-                        ],
-                    },
-                    ensure_ascii=False,
-                ),
+                review_prompt(result.output, context.sources),
                 deps=context.sources,
                 usage_limits=usage_limits(settings),
             )
@@ -181,6 +218,20 @@ async def discover_with_agents(
                 },
             }
             (staging / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+            (staging / "discovery-report.json").write_text(
+                json.dumps(
+                    discovery_report(
+                        context,
+                        discovery,
+                        settings,
+                        stop_reason=acquisition_stop_reason or "agent_finished",
+                        acquisition_stop_reason=acquisition_stop_reason,
+                        published=True,
+                    ),
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
             (staging / "report.md").write_text(render_report(discovery), encoding="utf-8")
             destination = out / discovery_id
             staging.rename(destination)
@@ -221,6 +272,23 @@ async def discover_with_agents(
         }
         diagnostic_path = diagnostic / "diagnostic.json"
         diagnostic_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        if stage in {"acquisition", "discovery"}:
+            acquisition_stop_reason = crawler.budget_stop_reason
+        stop_reason = "run_timeout" if isinstance(error, TimeoutError) else f"{stage}_failed"
+        (diagnostic / "discovery-report.json").write_text(
+            json.dumps(
+                discovery_report(
+                    context,
+                    discovery,
+                    settings,
+                    stop_reason=stop_reason,
+                    acquisition_stop_reason=acquisition_stop_reason,
+                    published=False,
+                ),
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         if decision is not None:
             (diagnostic / "review.json").write_text(
                 decision.model_dump_json(indent=2), encoding="utf-8"

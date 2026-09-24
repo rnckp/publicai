@@ -22,6 +22,21 @@ from publicai.crawler import (
 BASE = "https://www.ausserberg.ch"
 
 
+async def test_global_budget_diagnostic_does_not_confuse_page_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with SafeCrawler(CrawlSettings(max_requests=2)) as crawler:
+        crawler._record(
+            BASE + "/large", CrawlError("crawl_limit", "Response exceeds the byte limit")
+        )
+        assert crawler.budget_stop_reason is None
+        crawler.request_count = 2
+        assert crawler.budget_stop_reason == "request_budget_exhausted"
+        crawler.request_count = 0
+        monkeypatch.setattr("publicai.crawler.time.monotonic", lambda: crawler._started + 601)
+        assert crawler.budget_stop_reason == "time_budget_exhausted"
+
+
 def test_deep_html_is_a_recorded_gap() -> None:
     result, crawler, _ = run_fetch(
         {

@@ -36,6 +36,11 @@ Impressum or Gemeindekanzlei page and use that source ID for official contact.
 Retain qualifiers and conditions with each requirement. Do not claim exhaustive
 requirements from form fields. Inspect visible labels/required markers only.
 All six capabilities must appear even if unavailable. Missing facts stay absent.
+Coverage unavailable means no usable information was retained; it never proves
+that the municipality does not offer the service. Use not_found for absent evidence,
+blocked/inaccessible for failed access, and crawl_limit for acquisition limits.
+Only use explicitly_not_offered with literal not_offered_evidence stating that denial.
+Never assign a global crawl failure to a capability without a relevant source connection.
 Never invent coverage: supported requires the catalogue's minimum guidance.
 Partial means substantive but insufficient guidance, handoff_only means a specific
 official destination only, unavailable means neither. General municipal contact
@@ -48,6 +53,8 @@ period. Include date validity only when the source explicitly states completenes
 Before final output, check EVERY fact against its cited excerpt, particularly
 contacts, dates and conditions. Use list_sources and web_fetch for enough
 coverage, but stop when the bounded request budget is exhausted and report gaps.
+list_sources ranks matching leads before truncation. If links_truncated is true,
+use narrower service keywords; the first batch is not the whole known navigation.
 Do not invent discovery IDs, source IDs, timestamps, hashes or review decisions;
 the trusted orchestrator owns these. Reuse the supplied source IDs in evidence
 references. Set capability entry IDs to short stable

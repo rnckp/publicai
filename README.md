@@ -57,6 +57,13 @@ overwritten. Failed discovery/review/build attempts produce diagnostic artifacts
 and a nonzero exit code. Local artifacts are ignored by Git.
 Successful discoveries include `metrics.json` with duration, website requests and
 per-agent token/tool usage. Diagnostics retain safe validation details, not API payloads.
+Successful and failed attempts also write `discovery-report.json`: publication status,
+stop reason, acquisition-budget status, inspected/cited source counts, acquisition
+failures, and per-capability coverage and discovery status. `agent_finished` means
+the agent returned an inventory, not that the website was exhaustively searched.
+Coverage in a failed run is an unapproved candidate; before a valid candidate exists,
+the unresolved-capability list is `null`. Request/time budgets are distinguished
+from page size, nesting, and redirect limits.
 For semantic review rejections, inspect `review.json` beside `diagnostic.json` for
 the rejected claim paths and reasons; no discovery is published until review passes.
 
@@ -115,6 +122,13 @@ All tools are read-only and return structured results and readable text. Results
 include coverage (`supported`, `partial`, `handoff_only`, `unavailable`), query
 outcome, citations, source retrieval timestamps and an explicit build-time
 snapshot label. `supported` means minimum structured guidance, not completeness.
+`discovery_status` separately identifies `observed`, `not_observed`, `blocked`,
+`acquisition_limited`, or `explicitly_not_offered`; `missing_reasons` preserves
+individual gaps. `unavailable` coverage means no usable information in the snapshot,
+not that the municipality lacks the service. Explicit denials include citations.
+These statuses are derived from existing reviewed fields, so older snapshots still load.
+Generated template version 1.1.0 adds these two MCP response fields; clients that
+validate an exact response-key set must update their schema.
 Requirements retain their conditions; form fields do not imply an exhaustive
 procedure. Conflicting claims are reported separately from definitive answers.
 A package can have partial coverage when identity and review checks pass and at
@@ -199,6 +213,26 @@ in a subprocess with cleared credentials, denied sockets/process spawning and
 resource limits. This local check is defense in depth, not an OS sandbox.
 Generated Docker configuration supports a separate container runtime; the
 builder's automatic checks do not launch Docker.
+
+### Reviewer gold-set evaluation
+
+Ten independently labeled fictional cases exercise the production reviewer prompt,
+retained-source tool, and approval gate: correct/incorrect hours, unrelated quotations,
+conditions, handoffs, conflicting evidence, and source-instruction injection. Ordinary
+tests validate the fixtures and evaluation scoring offline; they do not measure model
+accuracy. The paid evaluation stays skipped even when API credentials are present.
+
+To explicitly run all ten cases against `model.review_model` in `config.yaml`:
+
+```sh
+uv run pytest tests/publicai/test_review_evals.py -k live_review_gold_set --run-review-evals -s
+```
+
+This contacts the model provider, uses per-case configured usage/time limits, and
+prints a JSON report plus its pytest temporary-file path. The report includes false
+approval/rejection counts and rates and separate execution errors. No crawler or
+telemetry exporter is started. A passing small gold set is calibration evidence,
+not proof of real-world factual accuracy; live evaluation has not yet been recorded.
 
 The fixture municipality is fictional. Its URLs use the authorized host only to
 exercise network policy; its contents are **not facts about Ausserberg**.

@@ -19,9 +19,9 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from publicai.contracts import Discovery, load_discovery, packaging_issues
+from publicai.contracts import Discovery, discovery_status, load_discovery, packaging_issues
 
-TEMPLATE_VERSION = "1.0.0"
+TEMPLATE_VERSION = "1.1.0"
 _SOURCE = Path(__file__).parent
 _TEMPLATES = _SOURCE / "templates"
 _RUNTIME_FILES = ("contracts.py", "runtime.py", "conformance.py")
@@ -138,12 +138,13 @@ def _documentation(discovery: Discovery, build_id: str | None) -> dict[str, str]
         "Rebuild to update. Requirements are not exhaustive unless a source explicitly says so."
     )
     summary = [
-        "| Capability | Tool | Coverage | Structured entries | Official handoffs |",
-        "| --- | --- | --- | ---: | ---: |",
+        "| Capability | Tool | Coverage | Discovery | Structured entries | Official handoffs |",
+        "| --- | --- | --- | --- | ---: | ---: |",
     ]
     for key, capability in capabilities.items():
         summary.append(
             f"| {_markdown(key)} | `{_TOOL_NAMES[key]}` | {capability['coverage']} | "
+            f"{discovery_status(discovery.capabilities[key])} | "
             f"{len(capability.get('entries', []))} | {len(capability.get('handoffs', []))} |"
         )
     report = [

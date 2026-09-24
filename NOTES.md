@@ -1,5 +1,13 @@
 # Durable implementation notes
 
+- Discovery status is derived from reviewed capability coverage/missing reasons;
+  it is not added to the versioned snapshot input. `unavailable` remains usable-data
+  coverage, never evidence of service absence. Global acquisition failures must
+  not be attributed to a capability without a relevant source connection.
+- `crawl_limit` also covers individual response size, HTML depth and redirects.
+  Discovery reports use the crawler's actual request/time budgets separately;
+  `agent_finished` does not assert exhaustive search.
+
 - A live recycling review rejected `partial` because a collection-point label
   looked sufficient, but deterministic coverage requires `locations` or
   `instructions`. Both agents share explicit field guidance in the catalogue;

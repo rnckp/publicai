@@ -1,5 +1,9 @@
 # Deferred work and validation
 
+- Run the ten-case reviewer gold set explicitly with `--run-review-evals` before
+  using it to justify model changes. Offline fixture/scoring checks do not measure
+  the live reviewer's false-approval or false-rejection rates.
+
 - A second German-speaking municipality was part of the original MVP acceptance
   plan, but the current crawler permits only `www.ausserberg.ch`. Expanding that
   boundary requires explicit authorization and code changes. No second-site

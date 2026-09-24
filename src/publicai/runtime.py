@@ -20,10 +20,13 @@ from publicai.contracts import (
     CapabilityId,
     Coverage,
     Discovery,
+    DiscoveryStatus,
     EvidenceRef,
     Fact,
+    MissingReason,
     ServiceEntry,
     StrictModel,
+    discovery_status,
     evidence_refs,
     load_discovery,
 )
@@ -79,6 +82,8 @@ class ResponseEnvelope(StrictModel):
     municipality: str
     capability: CapabilityId
     coverage: Coverage
+    discovery_status: DiscoveryStatus
+    missing_reasons: list[MissingReason]
     outcome: Outcome
     data: ResultData
     evidence: list[Citation]
@@ -232,11 +237,14 @@ class SnapshotRuntime:
         data = ResultData(entries=entries, handoffs=capability.handoffs)
         refs = evidence_refs(data) + evidence_refs(self.discovery.identity.name)
         refs += evidence_refs(capability.valid_from) + evidence_refs(capability.valid_to)
+        refs += capability.not_offered_evidence
         citations = self._citations(refs)
         return ResponseEnvelope(
             municipality=self.discovery.identity.name.value,
             capability=capability_id,
             coverage=capability.coverage,
+            discovery_status=discovery_status(capability),
+            missing_reasons=capability.missing_reasons,
             outcome=outcome,
             data=data,
             evidence=citations,
@@ -292,6 +300,8 @@ def tool_result(result: ResponseEnvelope) -> CallToolResult:
     lines = [
         f"{result.municipality}: {result.capability}",
         f"Coverage: {result.coverage}; outcome: {result.outcome}.",
+        f"Discovery: {result.discovery_status}. "
+        "Missing information does not establish service absence.",
         f"Build-time snapshot {result.snapshot.discovery_id} "
         f"({result.snapshot.created_at.isoformat()}); validity: {result.snapshot.status}.",
     ]

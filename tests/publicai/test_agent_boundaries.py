@@ -26,6 +26,65 @@ from publicai.contracts import SourceSnapshot
 from publicai.crawler import FetchedPage, Link, SafeCrawler
 
 
+async def test_list_sources_ranks_before_truncating_and_reports_budget() -> None:
+    """A useful late navigation link must survive the tool response limit."""
+    fixture = json.loads(
+        (Path(__file__).parents[2] / "src/publicai/fixtures/representative.json").read_text()
+    )
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        returns = [
+            part
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.tool_name == "list_sources"
+        ]
+        if not returns:
+            return ModelResponse(parts=[ToolCallPart("list_sources", {})])
+        content = returns[-1].content
+        assert content["links"][0]["label"] == "Abfall und Recycling"
+        assert len(content["links"]) == 150
+        assert content["matching_links"] == 161
+        assert content["links_truncated"] is True
+        assert content["request_budget"] == 100
+        assert content["budget_stop_reason"] is None
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {key: fixture[key] for key in ("identity", "capabilities")},
+                )
+            ]
+        )
+
+    agents = create_agents(Settings(), FunctionModel(respond), TestModel())
+    async with SafeCrawler() as crawler:
+        context = DiscoveryContext(
+            crawler=crawler,
+            official_url=fixture["official_url"],
+            discovery_id="ranking-test",
+            created_at=datetime.now(UTC),
+            sources={
+                source["id"]: SourceSnapshot.model_validate(source) for source in fixture["sources"]
+            },
+        )
+        context.links = {
+            str(i): {
+                "url": f"https://www.ausserberg.ch/verwaltung/galerie/{i}",
+                "label": "Galerie",
+                "kind": "html",
+            }
+            for i in range(160)
+        }
+        context.links["waste"] = {
+            "url": "https://www.ausserberg.ch/abfall",
+            "label": "Abfall und Recycling",
+            "kind": "html",
+        }
+        await agents.discoverer.run("Discover", deps=context)
+        assert crawler.request_count == 0
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 async def test_search_is_optional_scoped_and_discovery_only(enabled: bool) -> None:
     """Search must not authorize live provider fetching or give the reviewer web access."""

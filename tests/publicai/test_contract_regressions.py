@@ -180,6 +180,8 @@ async def test_six_protocol_signatures_match_the_literal_catalogue(
             "municipality",
             "capability",
             "coverage",
+            "discovery_status",
+            "missing_reasons",
             "outcome",
             "data",
             "evidence",

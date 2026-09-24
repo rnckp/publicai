@@ -24,6 +24,9 @@ CAPABILITY_IDS: tuple[CapabilityId, ...] = (
     "problem_reporting",
 )
 type Coverage = Literal["supported", "partial", "handoff_only", "unavailable"]
+type DiscoveryStatus = Literal[
+    "observed", "not_observed", "blocked", "acquisition_limited", "explicitly_not_offered"
+]
 type MissingReason = Literal[
     "not_found",
     "blocked",
@@ -400,6 +403,23 @@ def facts(value: object) -> list[Fact | DateFact]:
     if isinstance(value, list):
         return [fact for child in value for fact in facts(child)]
     return []
+
+
+def discovery_status(capability: Capability) -> DiscoveryStatus:
+    """Describe discovery separately from usable coverage, without inferring service absence.
+
+    Reasons are reviewed capability metadata. Global crawl failures must not be
+    assigned to individual services without evidence linking them to that service.
+    """
+    if capability.coverage != "unavailable":
+        return "observed"
+    if "explicitly_not_offered" in capability.missing_reasons and capability.not_offered_evidence:
+        return "explicitly_not_offered"
+    if "crawl_limit" in capability.missing_reasons:
+        return "acquisition_limited"
+    if {"blocked", "inaccessible", "javascript_required"} & set(capability.missing_reasons):
+        return "blocked"
+    return "not_observed"
 
 
 def classify_coverage(capability_id: CapabilityId, capability: Capability) -> Coverage:

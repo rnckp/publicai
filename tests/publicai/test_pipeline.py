@@ -55,6 +55,7 @@ class RetainedCrawler:
     request_count = 2
     failures: list = []
     discovered_urls: list[str] = []
+    budget_stop_reason: str | None = None
 
     def __init__(self, sources: list[dict]) -> None:
         self.sources = sources
@@ -128,6 +129,12 @@ async def test_complete_pipeline_runs_agents_and_publishes_unique_artifacts(
         "https://www.ausserberg.ch/", tmp_path, settings, agents, crawler
     )
     assert first != second
+    report = json.loads((first.parent / "discovery-report.json").read_text())
+    assert report["stop_reason"] == "agent_finished"
+    assert report["unresolved_capabilities"] == []
+    assert report["sources_inspected"] == 2
+    assert report["sources_cited"] == 2
+    assert report["capabilities"]["office_hours"]["discovery_status"] == "observed"
     assert first.is_file() and second.is_file()
     assert json.loads(first.read_text())["review"]["status"] == "passed"
     assert len(json.loads((first.parent / "review.json").read_text())["checks"]) > 10
@@ -179,7 +186,21 @@ async def test_provider_error_payload_is_not_exposed(tmp_path: Path) -> None:
             )
     assert "private-provider-payload" not in str(error.value)
     assert "private-provider-payload" not in error.value.diagnostic_path.read_text()
+    report = json.loads((error.value.diagnostic_path.parent / "discovery-report.json").read_text())
+    assert report["stop_reason"] == "review_failed"
+    assert report["publication_status"] == "failed"
     assert not list(tmp_path.glob("discovery-*"))
+
+
+async def test_completed_run_reports_depleted_crawl_budget(tmp_path: Path) -> None:
+    agents, crawler = fixture_agents(Settings())
+    crawler.budget_stop_reason = "request_budget_exhausted"
+    path = await discover_with_agents(
+        "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler
+    )
+    report = json.loads((path.parent / "discovery-report.json").read_text())
+    assert report["stop_reason"] == "request_budget_exhausted"
+    assert report["publication_status"] == "published"
 
 
 def test_minimization_preserves_uninspected_document_evidence() -> None:

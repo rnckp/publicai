@@ -97,6 +97,8 @@ async def _mcp_checks(fixture: Discovery, candidate: Discovery) -> list[str]:
         "municipality",
         "capability",
         "coverage",
+        "discovery_status",
+        "missing_reasons",
         "outcome",
         "data",
         "evidence",
