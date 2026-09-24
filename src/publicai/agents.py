@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from pydantic import Field, ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
+from pydantic_ai.capabilities import WebFetch, WebSearch
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -32,7 +33,7 @@ from publicai.contracts import (
     SourceSnapshot,
     StrictModel,
 )
-from publicai.crawler import CrawlError, FetchedPage, SafeCrawler
+from publicai.crawler import ALLOWED_HOST, CrawlError, FetchedPage, SafeCrawler
 
 PROMPTS = Path(__file__).with_name("prompts")
 
@@ -244,22 +245,10 @@ def create_agents(
     }
     if settings.model.temperature is not None:
         model_settings["temperature"] = settings.model.temperature
-    discoverer = Agent(
-        discovery_model,
-        name="municipality_discovery",
-        deps_type=DiscoveryContext,
-        output_type=ToolOutput(Inventory, strict=True),
-        instructions=(PROMPTS / "discovery.md").read_text(encoding="utf-8")
-        + "\n"
-        + (PROMPTS / "catalogue.md").read_text(encoding="utf-8"),
-        model_settings=model_settings,
-        retries=settings.model.retries,
-    )
 
-    @discoverer.tool
-    async def inspect_page(ctx: RunContext[DiscoveryContext], url: str) -> dict[str, Any]:
+    async def web_fetch(ctx: RunContext[DiscoveryContext], url: str) -> dict[str, Any]:
         """Inspect public HTML or explicitly linked JSON on www.ausserberg.ch."""
-        ctx.deps.progress("Discovery tool: inspect_page")
+        ctx.deps.progress("Discovery tool: web_fetch")
         try:
             page = await ctx.deps.crawler.fetch(url)
             source = ctx.deps.retain(page)
@@ -275,6 +264,26 @@ def create_agents(
             "authentication_required": page.authentication_required,
             "untrusted_evidence": True,
         }
+
+    discoverer = Agent(
+        discovery_model,
+        name="municipality_discovery",
+        deps_type=DiscoveryContext,
+        output_type=ToolOutput(Inventory, strict=True),
+        instructions=(PROMPTS / "discovery.md").read_text(encoding="utf-8")
+        + "\n"
+        + (PROMPTS / "catalogue.md").read_text(encoding="utf-8"),
+        model_settings=model_settings,
+        retries=settings.model.retries,
+        capabilities=[
+            WebFetch(native=False, local=web_fetch),
+            *(
+                [WebSearch(allowed_domains=[ALLOWED_HOST], external_web_access=False)]
+                if settings.web_search_enabled
+                else []
+            ),
+        ],
+    )
 
     @discoverer.tool
     def list_sources(ctx: RunContext[DiscoveryContext], query: str = "") -> dict[str, Any]:
@@ -355,7 +364,7 @@ def usage_limits(settings: Settings) -> UsageLimits:
 
 @asynccontextmanager
 async def live_agents(settings: Settings) -> AsyncIterator[FactoryAgents]:
-    """Create and close SDK clients with a fixed provider endpoint and no built-in web tools."""
+    """Create and close SDK clients with a fixed provider endpoint."""
     key_name = "OPENAI_API_KEY"
     key = os.getenv(key_name)
     if not key or key.startswith("your_"):

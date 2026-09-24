@@ -40,6 +40,7 @@ class Settings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     model: ModelSettings = Field(default_factory=ModelSettings)
+    web_search_enabled: bool = False
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
     crawl: CrawlSettings = Field(default_factory=CrawlSettings)
     run_timeout: float = Field(default=600, gt=0, le=600)

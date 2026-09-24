@@ -1,5 +1,7 @@
 # Model API connections are separate from website retrieval permissions.
 # Website tools are hard restricted to www.ausserberg.ch in crawler.py.
+# Discovery can search OpenAI's index; live evidence still uses the restricted crawler.
+web_search_enabled: true
 model:
   provider: openai
   discovery_model: gpt-6-sol

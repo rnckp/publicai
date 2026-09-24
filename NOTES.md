@@ -4,6 +4,11 @@
   portal URLs can be retained as handoffs but are never fetched. The OpenAI API
   connection is separate from website retrieval. `config.yaml` does not widen
   the website boundary.
+- Discovery uses Pydantic AI `WebSearch` with OpenAI indexed-only search and a
+  municipal domain filter, enabled by the checked-in config. `WebFetch` uses
+  the existing crawler via its custom local implementation: the installed SDK
+  does not support native WebFetch on OpenAI Responses. Search citations cannot
+  substitute for retained sources. Hosted searches are outside the crawler budget.
 - The two Pydantic AI agents perform discovery and evidence review. Package
   generation is deterministic; there is no code-generating builder agent.
   Current defaults use `gpt-6-sol` for discovery and `gpt-6-luna` for review.

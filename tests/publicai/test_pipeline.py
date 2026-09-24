@@ -87,7 +87,7 @@ def fixture_agents(settings: Settings, *, approve: bool = True) -> tuple:
     claims = claim_records(inventory)
 
     def extract(messages: object, info: object) -> ModelResponse:
-        assert {tool.name for tool in info.function_tools} == {"inspect_page", "list_sources"}
+        assert {tool.name for tool in info.function_tools} == {"web_fetch", "list_sources"}
         return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, inventory)])
 
     def review(messages: object, info: object) -> ModelResponse:

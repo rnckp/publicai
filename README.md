@@ -33,9 +33,12 @@ uv run factory run https://www.ausserberg.ch/ --out artifacts \
 ```
 
 Model API traffic goes only to OpenAI's fixed API endpoint; this is separate
-from website retrieval. Neither agent gets built-in web search, a browser, a
-shell, filesystem access, form submission or external URL fetching. No secrets
-are passed to their prompts or tools.
+from website retrieval. Discovery uses Pydantic AI's native `WebSearch` capability
+with indexed results filtered to `www.ausserberg.ch`. Set `web_search_enabled: false`
+in `config.yaml` to disable it (the default when no configuration file is loaded).
+Search can incur provider tool charges; hosted searches are separate from the
+crawler request budget. Neither agent gets a browser, shell, filesystem access,
+form submission or external URL fetching. No secrets are passed to their prompts or tools.
 
 Each run writes a new directory; existing discoveries and packages are never
 overwritten. Failed discovery/review/build attempts produce diagnostic artifacts
@@ -46,8 +49,12 @@ per-agent token/tool usage. Diagnostics retain safe validation details, not API 
 ## The two agents and their boundaries
 
 1. **Discovery agent** inspects public municipal HTML or explicitly linked
-   public JSON through `inspect_page` and searches known navigation using
-   `list_sources`. It returns a
+   public JSON through Pydantic AI's `WebFetch` capability (`web_fetch`) and searches
+   known navigation using `list_sources`. Because OpenAI Responses has no native
+   WebFetch support in the installed SDK, this capability uses the restricted
+   crawler as its local implementation. Native `WebSearch` finds additional page
+   candidates; snippets cannot become evidence until a page is fetched and retained.
+   It returns a
    typed inventory with literal excerpts for every fact. Trusted acquisition code
    owns source IDs, hashes, timestamps and website permissions.
 2. **Evidence-review agent** checks every claim and municipality identity. Its
