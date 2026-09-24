@@ -1,6 +1,5 @@
 services:
   municipality:
-    image: municipality-mcp:1.0.0
     build: .
     ports:
       - "127.0.0.1:8000:8000"

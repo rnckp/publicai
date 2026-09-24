@@ -301,6 +301,11 @@ The container binds internally on all interfaces; Compose publishes only the hos
 Compose uses an internal network, a read-only filesystem and a dedicated non-root user.
 Use rootless Docker when available. Public hosting and authentication are outside this MVP.
 Build/install steps require registry access; the running server needs no outbound access.
+Compose uses a project-scoped image name; keep each release's distinct project name.
+The container health check negotiates MCP and lists the six tools over loopback.
+It fails if the running HTTP server is unavailable or unresponsive. `--check` only
+validates the offline snapshot and is not a service health probe. If overriding
+the HTTP port, update the health command's `--port` to match.
 
 ## Services
 

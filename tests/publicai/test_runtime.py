@@ -1,5 +1,7 @@
 """Shared snapshot service behavior independent of model providers."""
 
+import asyncio
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -10,6 +12,60 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from publicai.contracts import Discovery, load_discovery
 from publicai.runtime import SnapshotRuntime, create_server, date_window
+
+
+async def test_health_probe_requires_a_responsive_mcp_server() -> None:
+    from publicai.runtime import check_health
+
+    fixture = Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "publicai.runtime",
+        "--discovery",
+        str(fixture),
+        "--transport",
+        "streamable-http",
+        "--port",
+        "0",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        async with asyncio.timeout(10):
+            while True:
+                line = await process.stderr.readline()
+                assert line, "Server exited before opening its listener"
+                match = re.search(rb"http://127\.0\.0\.1:(\d+)", line)
+                if match:
+                    port = int(match[1])
+                    break
+            assert await check_health(port=port)
+    finally:
+        if process.returncode is None:
+            process.terminate()
+        await asyncio.wait_for(process.communicate(), timeout=5)
+    assert not await check_health(port=port)
+
+
+async def test_health_probe_times_out_on_unresponsive_listener() -> None:
+    from publicai.runtime import check_health
+
+    writers = []
+
+    def connected(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        writers.append(writer)
+
+    server = await asyncio.start_server(connected, "127.0.0.1", 0)
+    try:
+        async with asyncio.timeout(2):
+            assert not await check_health(port=server.sockets[0].getsockname()[1], timeout=0.05)
+    finally:
+        server.close()
+        for writer in writers:
+            writer.close()
+            await writer.wait_closed()
+        await server.wait_closed()
 
 
 @pytest.fixture

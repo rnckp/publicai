@@ -43,6 +43,7 @@ _PRIVATE_JSON_KEY = re.compile(
 )
 _MAX_JSON_DEPTH = 16
 _MAX_JSON_NODES = 10000
+_MAX_HTML_DEPTH = 128
 
 
 class CrawlSettings(BaseModel):
@@ -267,7 +268,18 @@ def _link(
     except ValueError:
         return None
     if parts.scheme in {"mailto", "tel"}:
-        return Link(url=absolute.split("?", 1)[0], label=label, kind="contact")
+        contact = unquote(parts.path)
+        if (
+            not contact
+            or len(contact) > 320
+            or parts.netloc
+            or parts.fragment
+            or re.search(r"[\x00-\x20\x7f\\]", contact)
+            or (parts.scheme == "mailto" and not re.fullmatch(r"[^@]+@[^@]+\.[^@]+", contact))
+            or (parts.scheme == "tel" and not re.fullmatch(r"\+?[0-9().-]+", contact))
+        ):
+            return None
+        return Link(url=absolute.split("?", 1)[0], label=label[:300], kind="contact")
     if parts.scheme not in {"http", "https"} or not parts.hostname:
         return None
     if parts.username is not None or parts.password is not None:
@@ -367,6 +379,8 @@ class _PublicHTML(HTMLParser):
         hidden = tag in self._OMIT or explicitly_hidden
         navigation = tag in {"nav", "header"} or values.get("role") in {"navigation", "menu"}
         if tag not in self._VOID:
+            if len(self.stack) >= _MAX_HTML_DEPTH:
+                raise CrawlError("crawl_limit", "HTML exceeds the nesting limit")
             self.stack.append((tag, hidden, navigation))
         if self.omitted or hidden:
             return
@@ -452,6 +466,8 @@ def extract_html(url: str, html: str, retrieved_at: datetime | None = None) -> F
         if parser.labels.get(identifier)
     ]
     links = list({(link.url, link.label): link for link in parser.links}.values())
+    if not (text.strip() or links or fields or parser.authentication_required):
+        raise CrawlError("inaccessible", "HTML contains no retainable public evidence")
     return FetchedPage(
         url=url,
         title=" ".join(parser.title),

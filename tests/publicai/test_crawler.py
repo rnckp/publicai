@@ -20,9 +20,52 @@ from publicai.crawler import (
 BASE = "https://www.ausserberg.ch"
 
 
+def test_deep_html_is_a_recorded_gap() -> None:
+    result, crawler, _ = run_fetch(
+        {
+            "/robots.txt": (404, {}, b""),
+            "/": (200, {"content-type": "text/html"}, b"<div>" * 1000 + b"text"),
+        }
+    )
+    assert isinstance(result, CrawlError)
+    assert result.reason == "crawl_limit"
+    assert crawler.failures[0].reason == "crawl_limit"
+    assert not crawler.pages
+
+
+def test_empty_html_is_a_recorded_gap() -> None:
+    result, crawler, _ = run_fetch(
+        {
+            "/robots.txt": (404, {}, b""),
+            "/": (
+                200,
+                {"content-type": "text/html"},
+                b"<head><title>Service</title></head><script>render()</script>",
+            ),
+        }
+    )
+    assert isinstance(result, CrawlError)
+    assert result.reason == "inaccessible"
+    assert crawler.failures[0].reason == "inaccessible"
+    assert not crawler.pages
+
+
 async def public_resolver(host: str, port: int) -> list[str]:
     """Return a stable public address without using DNS."""
     return ["93.184.216.34"]
+
+
+@pytest.mark.parametrize(
+    "destination", ["mailto:bad%0d%0a@example.test", "tel:%0a123", "mailto:", "tel:words"]
+)
+def test_unsafe_contact_destinations_are_not_retained(destination: str) -> None:
+    page = extract_html(BASE, f'<p>Contact</p><a href="{destination}">Contact us</a>')
+    assert not page.links
+
+
+def test_ordinary_nested_html_still_retains_service_content() -> None:
+    page = extract_html(BASE, "<div>" * 30 + "Office hours" + "</div>" * 30)
+    assert page.text == "Office hours"
 
 
 def run_fetch(

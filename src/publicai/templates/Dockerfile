@@ -16,6 +16,6 @@ COPY --chown=10001:10001 discovery.json manifest.json ./
 ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 10001:10001
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["municipality-mcp", "--discovery", "/app/discovery.json", "--check"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["municipality-mcp", "--discovery", "/app/discovery.json", "--health-check"]
 ENTRYPOINT ["municipality-mcp", "--discovery", "/app/discovery.json"]
 CMD ["--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8000"]

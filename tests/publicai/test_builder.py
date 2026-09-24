@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from publicai.builder import BuildError, _run_conformance, build, render_report
 from publicai.contracts import load_discovery
@@ -36,6 +37,11 @@ def test_rebuilding_is_immutable_and_manifest_covers_every_file(tmp_path: Path) 
     second = build(FIXTURE, tmp_path)
 
     assert first != second
+    for package in (first, second):
+        service = yaml.safe_load((package / "compose.yaml").read_text())["services"]["municipality"]
+        assert "image" not in service  # Compose derives an image from the unique project name.
+        assert service["build"] == "."
+        assert '"--health-check"' in (package / "Dockerfile").read_text()
     assert original == {
         path.relative_to(first): path.read_bytes() for path in first.rglob("*") if path.is_file()
     }

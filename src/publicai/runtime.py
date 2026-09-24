@@ -1,6 +1,7 @@
 """Six read-only municipal MCP tools over a validated, offline build-time snapshot."""
 
 import argparse
+import asyncio
 import json
 import logging
 import re
@@ -396,6 +397,31 @@ def create_server(discovery: Discovery) -> MCPServer:
     return server
 
 
+async def check_health(*, port: int = 8000, timeout: float = 3) -> bool:
+    """Probe the loopback MCP request loop within a bounded health-check deadline."""
+    from mcp.client.session import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+    from mcp.shared._httpx_utils import create_mcp_http_client
+
+    if not 1 <= port <= 65535 or timeout <= 0:
+        raise ValueError("Health probe requires a valid port and positive timeout.")
+    try:
+        async with asyncio.timeout(timeout):
+            async with create_mcp_http_client() as client:
+                # Bound transport cleanup too; the SDK defaults to long SSE reads.
+                client.timeout = timeout
+                async with streamable_http_client(
+                    f"http://127.0.0.1:{port}/mcp", http_client=client
+                ) as streams:
+                    async with ClientSession(*streams, read_timeout_seconds=timeout) as session:
+                        await session.initialize()
+                        result = await session.list_tools()
+                        return {tool.name for tool in result.tools} == set(TOOL_NAMES.values())
+    except Exception:
+        # Transport task groups may wrap failures; any failed exchange is unhealthy.
+        return False
+
+
 def main() -> None:
     """Launch stdio or loopback HTTP; diagnostics are always written to stderr."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -403,14 +429,23 @@ def main() -> None:
     parser.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument(
+    checks = parser.add_mutually_exclusive_group()
+    checks.add_argument(
         "--check", action="store_true", help="Validate snapshot and tool construction, then exit."
+    )
+    checks.add_argument(
+        "--health-check", action="store_true", help="Probe the running loopback MCP server."
     )
     args = parser.parse_args()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(_JsonFormatter())
     logging.basicConfig(handlers=[handler], level=logging.WARNING)
     try:
+        if args.health_check:
+            healthy = asyncio.run(check_health(port=args.port))
+            if not healthy:
+                logging.getLogger(__name__).error("Loopback MCP health check failed.")
+            raise SystemExit(0 if healthy else 1)
         server = create_server(load_discovery(args.discovery))
         if args.check:
             return

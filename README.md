@@ -74,6 +74,10 @@ JSON must be explicitly linked from inspected municipal HTML on the permitted ho
 its size, nesting and values are bounded, and links within JSON are never auto-followed.
 Observed form labels, required markers and authentication interfaces are retained
 as acquisition metadata. They are never treated as complete procedural requirements.
+HTML nesting is limited to 128 elements. Empty or excessively nested optional pages
+become recorded acquisition gaps; identity and useful-evidence checks still apply.
+Published email and telephone link destinations remain citable even when their
+visible labels contain no address or number.
 
 ## Six stable tools
 
@@ -125,6 +129,9 @@ container runs as a dedicated non-root user with a read-only filesystem,
 capability drops, resource limits and a private runtime network. Docker itself
 should run rootlessly. Consult the generated README for runtime commands and
 the exact isolation limits of conformance checks.
+Compose derives image names from each release's project directory, avoiding a
+shared mutable image tag. Container health checks probe the running loopback MCP
+server; `--check` remains an offline snapshot validation command.
 
 The repository's factory container can also run the CLI. Model credentials belong
 only to the factory process; generated runtime containers do not inherit them.

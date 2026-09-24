@@ -1,8 +1,10 @@
 """The normal agent workflow publishes only complete, validated reviews."""
 
+import html
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 from pydantic_ai import models
 from pydantic_ai.messages import ModelResponse, ToolCallPart
@@ -10,10 +12,41 @@ from pydantic_ai.models.function import FunctionModel
 
 from publicai.agents import Inventory, claim_records, create_agents
 from publicai.config import Settings
-from publicai.crawler import FetchedPage, Link
+from publicai.crawler import FetchedPage, Link, SafeCrawler
 from publicai.pipeline import DiscoveryError, discover_with_agents
 
 FIXTURE = Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
+
+
+async def test_optional_empty_contact_page_does_not_abort_discovery(tmp_path: Path) -> None:
+    agents, retained = fixture_agents(Settings())
+    sources = {source["url"]: source for source in retained.sources}
+
+    async def resolver(host: str, port: int) -> list[str]:
+        return ["93.184.216.34"]
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        source = sources.get(str(request.url))
+        if source:
+            content = "<p>" + html.escape(source["text"]) + "</p>"
+            for url in source["links"]:
+                content += f'<a href="{html.escape(url, quote=True)}">fixture</a>'
+            content += '<a href="/impressum-empty">Impressum</a>'
+            content += '<a href="/fixture-contact">Kontakt</a>'
+            return httpx.Response(200, headers={"content-type": "text/html"}, text=content)
+        if request.url.path == "/impressum-empty":
+            return httpx.Response(
+                200, headers={"content-type": "text/html"}, text="<script>render()</script>"
+            )
+        return httpx.Response(404)
+
+    async with SafeCrawler(resolver=resolver, transport=httpx.MockTransport(respond)) as crawler:
+        path = await discover_with_agents(
+            "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler
+        )
+    discovery = json.loads(path.read_text())
+    assert discovery["review"]["status"] == "passed"
+    assert any(failure["reason"] == "inaccessible" for failure in discovery["failures"])
 
 
 class RetainedCrawler:

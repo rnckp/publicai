@@ -249,3 +249,47 @@ async def test_form_observations_survive_without_becoming_procedural_requirement
         assert source.form_fields[1].required_marker is False
         assert source.authentication_observed is True
         assert crawler.request_count == 0
+
+
+async def test_contact_destinations_remain_citable_after_minimization() -> None:
+    from publicai.contracts import Discovery, EvidenceRef, Fact, load_discovery
+    from publicai.crawler import extract_html
+    from publicai.pipeline import minimize_sources
+
+    discovery = load_discovery(
+        Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
+    )
+    async with SafeCrawler() as crawler:
+        context = DiscoveryContext(crawler, discovery.official_url, "contacts", datetime.now(UTC))
+        page = extract_html(
+            discovery.official_url + "contacts",
+            "<p>Contacts</p>"
+            '<a href="mailto:office@example.test?subject=private">E-Mail</a>'
+            '<a href="tel:+41000000000">Anrufen</a>',
+        )
+        source = context.retain(page)
+    for destination in ("mailto:office@example.test", "tel:+41000000000"):
+        assert destination in source.text
+        discovery.capabilities["office_hours"].entries[0].contacts.append(
+            Fact(
+                value=destination, evidence=[EvidenceRef(source_id=source.id, excerpt=destination)]
+            )
+        )
+    assert "private" not in source.text
+    assert source.links == []
+    discovery.sources.append(source)
+    minimized = minimize_sources(Discovery.model_validate(discovery.model_dump()))
+    assert "office@example.test" in minimized.sources[-1].text
+    assert "+41000000000" in minimized.sources[-1].text
+
+
+async def test_authentication_only_page_preserves_observation() -> None:
+    from publicai.crawler import extract_html
+
+    async with SafeCrawler() as crawler:
+        context = DiscoveryContext(crawler, "https://www.ausserberg.ch/", "auth", datetime.now(UTC))
+        source = context.retain(
+            extract_html("https://www.ausserberg.ch/login", '<form><input type="password"></form>')
+        )
+    assert source.authentication_observed
+    assert "Authentication interface observed" in source.text

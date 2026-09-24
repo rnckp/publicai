@@ -104,12 +104,16 @@ class DiscoveryContext:
         observed_links = [
             f"{link.label or 'Unlabelled link'}: {link.url}"
             for link in page.links
-            if urlsplit(link.url).scheme in {"http", "https"}
+            if urlsplit(link.url).scheme in {"http", "https", "mailto", "tel"}
         ]
         retained_text = page.text
         if observed_links:
             retained_text += "\nObserved link labels and destinations:\n" + "\n".join(
                 observed_links
+            )
+        if page.authentication_required:
+            retained_text += (
+                "\nAuthentication interface observed; no procedural requirements inferred."
             )
         source_id = f"source-{len(self.sources) + 1}"
         observed_fields = []

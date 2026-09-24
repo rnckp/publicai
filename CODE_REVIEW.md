@@ -2,6 +2,19 @@
 
 Reviewed 2026-09-24. **Five findings: zero critical, zero high, five medium, zero low.**
 
+## Resolution
+
+All five findings were addressed after this review: bounded HTML nesting,
+empty-page acquisition gaps, retained contact destinations, project-scoped
+Compose images, and a live loopback MCP health probe. Regression tests cover
+these changes, including successful discovery despite an empty optional page,
+contact evidence after minimization, and responsive/stopped/stalled HTTP listeners.
+The findings below preserve the original review evidence and pre-fix locations.
+Post-fix validation: **148 tests passed**, Ruff formatting and lint passed, and
+`git diff --check` passed. The HTTP health tests used local loopback listeners;
+Docker image builds and container launches remain unverified. Existing generated
+packages must be rebuilt to receive the updated runtime and container templates.
+
 ## Scope and validation
 
 Reviewed repository guidance, configuration, documentation and durable notes; the crawler and its network boundary; agent tools, evidence contracts and semantic review; discovery publication; package generation and conformance; all six runtime tools; tests, container templates and CI. Findings below distinguish reproduced defects from deployment risks established by configuration. No application code or tests were changed.

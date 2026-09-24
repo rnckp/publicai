@@ -1,5 +1,13 @@
 # Durable implementation notes
 
+- HTML parsing rejects nesting beyond 128 elements and empty evidence pages as
+  acquisition gaps; these are parser safety invariants, not deployment options.
+  Authentication-only observations and contact-link destinations remain retainable.
+- Generated Compose releases use project-scoped image names. Preserve distinct
+  project names when deploying or rolling back separate snapshot releases.
+- Runtime `--check` validates an offline snapshot; `--health-check` negotiates MCP
+  and lists the six tools on loopback. It must use the running server's HTTP port.
+
 - The requested two Pydantic AI agents are discovery and evidence review. Package
   generation remains deterministic, as specified by the MVP plan; there is no
   code-generating builder agent.
