@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:0.12.16 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.18 AS uv
 FROM python:3.14.0-slim-bookworm AS build
 COPY --from=uv /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
