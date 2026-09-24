@@ -232,3 +232,71 @@ def test_cli_mode_overrides_config_and_preserves_model_overrides(
     )
     assert result.exit_code == 0, result.output
     assert selected == [(mode, "swisscom" if mode == "apertus" else "openai", "shared", "specific")]
+
+
+@pytest.mark.parametrize("command", ["discover", "run"])
+@pytest.mark.parametrize("explicit_mode", [False, True])
+def test_model_apertus_selects_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, explicit_mode: bool
+) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("mode: openai\napertus:\n  discovery_model: configured-apertus\n")
+    selected = []
+
+    async def capture_settings(url: str, out: Path, settings: Settings, progress: object) -> Path:
+        selected.append(
+            (
+                settings.mode,
+                settings.active_model.provider,
+                settings.active_model.discovery_model,
+                settings.active_model.review_model,
+            )
+        )
+        return Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
+
+    monkeypatch.setattr("publicai.pipeline.discover", capture_settings)
+    monkeypatch.setattr("publicai.builder.build", lambda path, out, **kwargs: path.parent)
+    monkeypatch.setattr("publicai.cli._coverage", lambda path: None)
+    result = CliRunner().invoke(
+        app,
+        [
+            command,
+            "https://www.ausserberg.ch/",
+            "--out",
+            str(tmp_path),
+            "--config",
+            str(config),
+            "--model",
+            "apertus",
+            "--review-model",
+            "specific",
+            *(["--mode", "apertus"] if explicit_mode else []),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert selected == [("apertus", "swisscom", "configured-apertus", "specific")]
+
+
+@pytest.mark.parametrize("command", ["discover", "run"])
+def test_conflicting_apertus_selector_fails_before_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    def unexpected_discovery(*args: object, **kwargs: object) -> None:
+        pytest.fail("Conflicting selectors must fail before discovery")
+
+    monkeypatch.setattr("publicai.pipeline.discover", unexpected_discovery)
+    result = CliRunner().invoke(
+        app,
+        [
+            command,
+            "https://www.ausserberg.ch/",
+            "--out",
+            str(tmp_path),
+            "--mode",
+            "openai",
+            "--model",
+            "apertus",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--model apertus conflicts with --mode openai" in result.output

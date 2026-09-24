@@ -102,6 +102,8 @@ endpoint, as specified in the [Swisscom hacker guide](https://zh.ai-weeks.ch/too
 Set `mode: apertus` in `config.yaml` for the default; tune models, request/token
 budgets, timeouts and retries under `apertus:`. The existing `--model`,
 `--discovery-model` and `--review-model` options override the selected profile.
+As a shorthand, `--model apertus` selects the Apertus profile with its configured
+model IDs, just like `--mode apertus`; it cannot be combined with `--mode openai`.
 Use `--mode openai` to switch back.
 
 Requests are spaced at **2 per second**, including SDK retries, shared by both

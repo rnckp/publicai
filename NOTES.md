@@ -1,5 +1,11 @@
 # Durable implementation notes
 
+- `--model apertus` selects the Swisscom profile. Previously it sent the literal
+  model ID `apertus` to the configured provider (OpenAI by default), failing before
+  any model response. Keep this shorthand separate from ordinary model-ID overrides.
+  A bounded live Swisscom tool-output request succeeded during the fix; this does
+  not establish full discovery/review quality.
+
 - Discovery status is derived from reviewed capability coverage/missing reasons;
   it is not added to the versioned snapshot input. `unavailable` remains usable-data
   coverage, never evidence of service absence. Global acquisition failures must

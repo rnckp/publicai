@@ -33,6 +33,16 @@ def _settings(
 ) -> Settings:
     load_dotenv()
     settings = load_settings(config)
+    # Accept the profile shorthand without sending "apertus" as a provider model ID.
+    if model == AgentMode.APERTUS:
+        if mode is not None and mode != AgentMode.APERTUS:
+            from publicai.agents import ModelConfigurationError
+
+            raise ModelConfigurationError(
+                "--model apertus conflicts with --mode openai; use --mode apertus."
+            )
+        mode = AgentMode.APERTUS
+        model = None
     if mode is not None:
         settings.mode = mode
     if model:
@@ -119,7 +129,8 @@ def discover(
         AgentMode | None, typer.Option(help="Select the OpenAI or Apertus profile.")
     ] = None,
     model: Annotated[
-        str | None, typer.Option(help="Override both configured agent models.")
+        str | None,
+        typer.Option(help="Override both agent model IDs; 'apertus' selects the Apertus profile."),
     ] = None,
     discovery_model: Annotated[
         str | None, typer.Option(help="Discovery model; takes precedence over --model.")
@@ -165,7 +176,8 @@ def run(
         AgentMode | None, typer.Option(help="Select the OpenAI or Apertus profile.")
     ] = None,
     model: Annotated[
-        str | None, typer.Option(help="Override both configured agent models.")
+        str | None,
+        typer.Option(help="Override both agent model IDs; 'apertus' selects the Apertus profile."),
     ] = None,
     discovery_model: Annotated[
         str | None, typer.Option(help="Discovery model; takes precedence over --model.")
