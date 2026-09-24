@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from publicai.builder import BuildError, _run_conformance, build, render_report
-from publicai.contracts import load_discovery
+from publicai.builder import BuildError, _run_conformance, _stage_package, build, render_report
+from publicai.contracts import Discovery, load_discovery
 
 FIXTURE = Path(__file__).parents[2] / "src" / "publicai" / "fixtures" / "representative.json"
 
@@ -217,3 +217,45 @@ def test_failed_conformance_removes_staging_without_publishing(
     assert "conformance failure" in error.value.diagnostic_path.read_text(encoding="utf-8")
     assert len(list(tmp_path.iterdir())) == 1
     assert error.value.diagnostic_path.parent.parent == tmp_path
+
+
+@pytest.mark.parametrize("recognized_failure", [True, False])
+def test_failed_conformance_publishes_only_safe_child_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recognized_failure: bool
+) -> None:
+    """Keep useful failures and exit status without retaining arbitrary child output."""
+    safe_message = "Tool response has incorrect snapshot identity: get_office_hours."
+    sensitive_text = "Untrusted source and credential must not be retained: secret-726392"
+
+    def stage_failing_child(package: Path, discovery: Discovery, build_id: str) -> None:
+        _stage_package(package, discovery, build_id)
+        messages = [sensitive_text, safe_message + sensitive_text]
+        if recognized_failure:
+            messages.extend([safe_message, safe_message])
+        (package / "src" / "publicai" / "conformance.py").write_text(
+            "import sys\n"
+            f"print({sensitive_text!r})\n"
+            f"print({chr(10).join(messages)!r}, file=sys.stderr)\n"
+            "raise SystemExit(7)\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("publicai.builder._stage_package", stage_failing_child)
+
+    with pytest.raises(BuildError) as error:
+        build(FIXTURE, tmp_path)
+
+    diagnostic = error.value.diagnostic_path.parent
+    metadata = json.loads((diagnostic / "conformance.json").read_text(encoding="utf-8"))
+    assert metadata == {
+        "returncode": 7,
+        "failures": [safe_message] if recognized_failure else [],
+    }
+    report = error.value.diagnostic_path.read_text(encoding="utf-8")
+    assert "return code 7" in report
+    assert ("incorrect snapshot identity" in report) is recognized_failure
+    assert all(
+        sensitive_text not in path.read_text(encoding="utf-8") for path in diagnostic.iterdir()
+    )
+    assert list(tmp_path.glob("build-*")) == []
+    assert list(tmp_path.glob(".staging-*")) == []

@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from publicai.contracts import validate_url as validate_handoff_url
 
 ALLOWED_HOST = "www.ausserberg.ch"
+CALENDAR_SUFFIXES = (".ics", ".ical")
 USER_AGENT = "PublicAIMunicipalityDiscovery/0.1"
 Resolver = Callable[[str, int], Awaitable[list[str]]]
 _CONTACT_WORDS = re.compile(r"kontakt|contact|impressum|kanzlei", re.I)
@@ -306,7 +307,7 @@ def _link(
         return None
     if document_kind == "pdf" or suffix.endswith(".pdf") or label.casefold().endswith(".pdf"):
         kind = "pdf"
-    elif document_kind == "calendar" or suffix.endswith((".ics", ".ical")):
+    elif document_kind == "calendar" or suffix.endswith(CALENDAR_SUFFIXES):
         kind = "calendar"
     elif parts.hostname != urlsplit(base).hostname:
         kind = "external"
@@ -701,7 +702,7 @@ class SafeCrawler:
         current = validate_url(url, self.allowed_host)
         for redirects in range(self.settings.max_redirects + 1):
             suffix = unquote(urlsplit(current).path).lower()
-            if suffix.endswith((".pdf", ".ics", ".ical")):
+            if suffix.endswith((".pdf", *CALENDAR_SUFFIXES)):
                 reason = "pdf_uninspected" if suffix.endswith(".pdf") else "blocked"
                 raise CrawlError(reason, "Document and calendar destinations are link-only")
             if not skip_robots:

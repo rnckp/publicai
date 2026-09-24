@@ -21,6 +21,7 @@ from pydantic_ai_harness.exa import ExaSearch
 from publicai.config import ExaSettings
 from publicai.crawler import (
     ALLOWED_HOST,
+    CALENDAR_SUFFIXES,
     CrawlError,
     CrawlFailure,
     CrawlSettings,
@@ -63,7 +64,11 @@ class _Response(BaseModel):
 def _page_url(url: str, allowed_host: str) -> str:
     """Accept only municipal HTML-page candidates, never document or JSON retrieval."""
     url = validate_url(url, allowed_host)
-    if unquote(urlsplit(url).path).lower().endswith((".pdf", ".ics", ".xml", ".json", ".zip")):
+    if (
+        unquote(urlsplit(url).path)
+        .lower()
+        .endswith((".pdf", *CALENDAR_SUFFIXES, ".xml", ".json", ".zip"))
+    ):
         raise CrawlError("blocked", "Exa retrieval is restricted to municipal HTML pages")
     return url
 
@@ -156,27 +161,33 @@ class ExaRetriever:
                 raise CrawlError("crawl_limit", "Exa acquisition budget exhausted")
             remaining = self.settings.run_timeout - (time.monotonic() - self._started)
             try:
-                async with asyncio.timeout(min(self.exa.timeout, remaining)):
+                async with asyncio.timeout(remaining):
                     delay = self._next_request - time.monotonic()
                     if delay > 0:
                         await asyncio.sleep(delay)
-                    self.request_count += 1
-                    self._next_request = time.monotonic() + self.exa.request_interval
-                    async with self._http.stream("POST", endpoint, json=payload) as response:
-                        if response.status_code in {401, 403}:
-                            raise ExaConfigurationError(
-                                "Exa authentication failed; check EXA_API_KEY."
-                            )
-                        response.raise_for_status()
-                        data = bytearray()
-                        async for chunk in response.aiter_bytes():
-                            if len(data) + len(chunk) > self.settings.max_bytes:
-                                raise CrawlError(
-                                    "crawl_limit", "Exa response exceeds the byte limit"
+                    remaining = self.settings.run_timeout - (time.monotonic() - self._started)
+                    if remaining <= 0:
+                        raise CrawlError("crawl_limit", "Exa acquisition budget exhausted")
+                    async with asyncio.timeout(min(self.exa.timeout, remaining)):
+                        self.request_count += 1
+                        self._next_request = time.monotonic() + self.exa.request_interval
+                        async with self._http.stream("POST", endpoint, json=payload) as response:
+                            if response.status_code in {401, 403}:
+                                raise ExaConfigurationError(
+                                    "Exa authentication failed; check EXA_API_KEY."
                                 )
-                            data.extend(chunk)
-                        return _Response.model_validate_json(data)
+                            response.raise_for_status()
+                            data = bytearray()
+                            async for chunk in response.aiter_bytes():
+                                if len(data) + len(chunk) > self.settings.max_bytes:
+                                    raise CrawlError(
+                                        "crawl_limit", "Exa response exceeds the byte limit"
+                                    )
+                                data.extend(chunk)
+                            return _Response.model_validate_json(data)
             except (httpx.HTTPError, ValidationError, TimeoutError) as error:
+                if self.budget_stop_reason == "time_budget_exhausted":
+                    raise CrawlError("crawl_limit", "Exa acquisition budget exhausted") from error
                 raise CrawlError(
                     "inaccessible", "Exa request failed or returned invalid data"
                 ) from error

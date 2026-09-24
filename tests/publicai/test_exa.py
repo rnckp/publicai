@@ -1,5 +1,6 @@
 """Exa's provider boundary preserves municipal evidence and acquisition limits."""
 
+import asyncio
 import hashlib
 import json
 
@@ -95,7 +96,16 @@ async def test_other_municipality_scopes_search_and_fetch() -> None:
 
 
 @pytest.mark.parametrize(
-    "url", ["https://evil.example/", "http://127.0.0.1/", "https://www.ausserberg.ch/calendar.pdf"]
+    "url",
+    [
+        "https://evil.example/",
+        "http://127.0.0.1/",
+        "https://www.ausserberg.ch/calendar.pdf",
+        *[
+            f"https://www.ausserberg.ch/calendar{suffix}"
+            for suffix in (".ics", ".ical", ".ICS", ".ICAL", ".%69cs", ".%69cal")
+        ],
+    ],
 )
 async def test_unsafe_fetch_never_reaches_exa(url: str) -> None:
     def forbidden(request: httpx.Request) -> httpx.Response:
@@ -256,6 +266,76 @@ async def test_exa_fetch_budget_prevents_extra_requests() -> None:
             await retriever.fetch("https://www.ausserberg.ch/kontakt")
         assert retriever.budget_stop_reason == "request_budget_exhausted"
         assert retriever.request_count == 1
+
+
+async def test_pacing_longer_than_http_timeout_still_allows_next_fetch() -> None:
+    requested = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        url = json.loads(request.content)["urls"][0]
+        requested.append(url)
+        return httpx.Response(200, json={"results": [{"url": url, "text": "Evidence"}]})
+
+    root = "https://www.ausserberg.ch/"
+    async with ExaRetriever(
+        CrawlSettings(run_timeout=10),
+        ExaSettings(timeout=0.025, request_interval=0.1),
+        api_key="test-key",
+        transport=httpx.MockTransport(respond),
+    ) as retriever:
+        await retriever.fetch(root)
+        page = await retriever.fetch(root + "kontakt")
+        assert page.text == "Evidence"
+        assert retriever.request_count == 2
+        assert retriever.budget_stop_reason is None
+    assert requested == [root, root + "kontakt"]
+
+
+@pytest.mark.parametrize("phase", ["pacing", "http"])
+async def test_global_time_budget_still_bounds_pacing_and_http(phase: str) -> None:
+    requested = []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        url = json.loads(request.content)["urls"][0]
+        requested.append(url)
+        if phase == "http":
+            await asyncio.Event().wait()
+        return httpx.Response(200, json={"results": [{"url": url, "text": "Evidence"}]})
+
+    root = "https://www.ausserberg.ch/"
+    async with ExaRetriever(
+        CrawlSettings(run_timeout=0.1),
+        ExaSettings(timeout=1, request_interval=0.5),
+        api_key="test-key",
+        transport=httpx.MockTransport(respond),
+    ) as retriever:
+        if phase == "pacing":
+            await retriever.fetch(root)
+        with pytest.raises(CrawlError, match="budget exhausted") as failure:
+            await retriever.fetch(root + "kontakt")
+        assert failure.value.reason == "crawl_limit"
+        assert retriever.request_count == 1
+        assert retriever.budget_stop_reason == "time_budget_exhausted"
+        assert retriever.failures[-1].reason == "crawl_limit"
+    assert requested == [root if phase == "pacing" else root + "kontakt"]
+
+
+async def test_http_timeout_remains_an_individual_acquisition_failure() -> None:
+    async def respond(request: httpx.Request) -> httpx.Response:
+        await asyncio.Event().wait()
+        raise AssertionError("An unresponsive request should have timed out")
+
+    async with ExaRetriever(
+        CrawlSettings(run_timeout=10),
+        ExaSettings(timeout=0.025),
+        api_key="test-key",
+        transport=httpx.MockTransport(respond),
+    ) as retriever:
+        with pytest.raises(CrawlError, match="Exa request failed") as failure:
+            await retriever.fetch("https://www.ausserberg.ch/")
+        assert failure.value.reason == "inaccessible"
+        assert retriever.request_count == 1
+        assert retriever.budget_stop_reason is None
 
 
 async def test_seed_fetches_home_and_linked_contact_through_exa() -> None:

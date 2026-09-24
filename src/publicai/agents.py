@@ -38,6 +38,7 @@ from publicai.contracts import (
     ObservedFormField,
     SourceSnapshot,
     StrictModel,
+    evidence_refs,
 )
 from publicai.crawler import CrawlError, FetchedPage, SafeCrawler
 from publicai.retrieval import ExaRetriever
@@ -91,16 +92,14 @@ def rank_source_links(links: list[dict[str, str]], query: str = "") -> list[dict
 
 
 def review_prompt(inventory: Inventory, sources: dict[str, SourceSnapshot]) -> str:
-    """Build the same review input for production and independently labeled evaluations."""
+    """Supply full cited-source context before review in production and evaluations."""
     payload = inventory.model_dump(mode="json")
+    cited_sources = sorted({ref.source_id for ref in evidence_refs(inventory)})
     return "Review this inventory and every listed claim path.\n" + json.dumps(
         {
             "inventory": payload,
             "claims": claim_records(payload),
-            "sources": [
-                {"id": source.id, "url": source.url, "kind": source.kind}
-                for source in sources.values()
-            ],
+            "sources": [sources[source_id].model_dump(mode="json") for source_id in cited_sources],
         },
         ensure_ascii=False,
     )

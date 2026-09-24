@@ -161,6 +161,23 @@ def test_gold_cases_pass_literal_evidence_checks(case: GoldCase) -> None:
     assert case.id not in prompt
 
 
+def test_review_prompt_supplies_context_outside_selected_excerpts() -> None:
+    """Contradictions must reach review even when the model makes no source-tool calls."""
+    case = next(case for case in CASES if case.id == "conflicting_hours")
+    inventory, sources = case_input(case)
+    consistent_inventory, consistent_sources = case_input(
+        case.model_copy(update={"source_text": case.excerpt})
+    )
+
+    prompt = review_prompt(inventory, sources)
+    assert prompt != review_prompt(consistent_inventory, consistent_sources)
+    payload = json.loads(prompt.split("\n", 1)[1])
+    supplied = {source["id"]: source for source in payload["sources"]}
+    assert supplied["home"]["text"] == sources["home"].text
+    assert supplied["contact"]["text"] == sources["contact"].text
+    assert "Montag geschlossen" in supplied["contact"]["text"]
+
+
 async def test_always_approving_reviewer_is_detected_without_network() -> None:
     results = []
     for case in CASES:

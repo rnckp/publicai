@@ -96,6 +96,22 @@ def test_identity_requires_two_distinct_page_urls(payload: dict[str, Any]) -> No
         Discovery.model_validate(payload)
 
 
+def test_service_source_cannot_replace_distinct_homepage_and_contact_pages(
+    payload: dict[str, Any],
+) -> None:
+    """A third page cannot corroborate duplicated homepage/contact evidence."""
+    payload["sources"][1]["url"] = payload["sources"][0]["url"]
+    service = copy.deepcopy(payload["sources"][0])
+    service.update(id="third", kind="service", url="https://www.ausserberg.ch/third-page")
+    payload["sources"].append(service)
+    payload["identity"]["name"]["evidence"].append(
+        {"source_id": service["id"], "excerpt": payload["identity"]["name"]["value"]}
+    )
+
+    with pytest.raises(ValidationError, match="distinct homepage and contact"):
+        Discovery.model_validate(payload)
+
+
 def test_homepage_kind_cannot_be_assigned_to_an_arbitrary_service_page(
     payload: dict[str, Any],
 ) -> None:

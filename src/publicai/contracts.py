@@ -250,14 +250,18 @@ class Discovery(StrictModel):
         }
         home_sources = {sid for sid in identity_sources if sources[sid].kind == "homepage"}
         contact_sources = {sid for sid in identity_sources if sources[sid].kind == "contact"}
-        distinct_identity_urls = {
-            (
+        identity_urls = {
+            source_id: (
                 urlsplit(sources[source_id].url).hostname,
                 urlsplit(sources[source_id].url).path.rstrip("/"),
             )
-            for source_id in identity_sources
+            for source_id in home_sources | contact_sources
         }
-        if not home_sources or not contact_sources or len(distinct_identity_urls) < 2:
+        if not any(
+            identity_urls[home] != identity_urls[contact]
+            for home in home_sources
+            for contact in contact_sources
+        ):
             raise ValueError(
                 "Municipality identity must match distinct homepage and contact sources."
             )

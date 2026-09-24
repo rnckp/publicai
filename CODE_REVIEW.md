@@ -2,6 +2,21 @@
 
 Reviewed on 2026-09-24 at commit `f61bcd5a2371ed494c651f5ad960309909e23082`.
 
+## Implementation follow-up
+
+R02–R10 were fixed on 2026-09-24. R03 supplies full cited-source context in the
+initial reviewer input; R08 retains safe conformance messages and the child exit
+code. Generated template version 1.1.1 includes the runtime and identity fixes.
+R01 remains unchanged and is deferred in [PLAN.md](PLAN.md).
+
+Validation after the fixes: Ruff formatting and lint checks passed; the full local
+suite passed with **273 passed, 1 intentionally skipped paid evaluation**. Compose
+configuration was validated offline. Docker builds and live provider evaluations
+were not run. Full cited-source context increases review input-token usage.
+
+The findings and original validation results below describe the reviewed commit
+and are retained as the historical evidence for these changes.
+
 ## Scope and approach
 
 Reviewed the factory CLI, configuration, discovery/review agents and prompts, Exa

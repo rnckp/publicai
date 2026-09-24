@@ -1,5 +1,14 @@
 # Deferred work and validation
 
+- **R01 — metadata-only telemetry exception handling (deferred):** The manual
+  `Evidence validation` Logfire span records escaping reviewer exception messages
+  and tracebacks, including provider response bodies, despite Pydantic AI content
+  capture being disabled. Telemetry remains off by default; enabling an exporter
+  can expose those bodies. Catch untrusted exceptions inside that span, record only
+  approved type/status metadata, and re-raise after it closes. Verify with an
+  in-memory exporter that synthetic provider payloads are absent from both span
+  events and diagnostics. See [the review finding](CODE_REVIEW.md#r01--provider-error-bodies-escape-metadata-only-telemetry).
+
 - Repeat the Apertus end-to-end run when Swisscom quota permits. The September
   2026 verification hit HTTP 429 after the first model response and two additional
   page fetches; lower output allowance and visible bounded retries are implemented,
@@ -9,10 +18,10 @@
   using it to justify model changes. Offline fixture/scoring checks do not measure
   the live reviewer's false-approval or false-rejection rates.
 
-- A second German-speaking municipality was part of the original MVP acceptance
-  plan, but the current crawler permits only `www.ausserberg.ch`. Expanding that
-  boundary requires explicit authorization and code changes. No second-site
-  result is established by the repository.
+- Run the original MVP acceptance trial on a second German-speaking municipality.
+  The configured host allowlist already includes Ausserberg and 20 other hosts;
+  offline tests verify Riehen's retrieval boundary. A successful live second-site
+  discovery, review, and package remains unverified.
 - Generated-package Docker build and launch have not been verified locally in
   the recorded review. The builder runs offline subprocess conformance; that is
   distinct from container validation.
@@ -51,8 +60,8 @@
   Keep automated deployment separate from publishing.
 - Test naming and input validation, successful publication, failed validation/build/
   push, and overlapping runs; verify a real Docker build and authorized GHCR push.
-  Supporting municipalities beyond Ausserberg remains dependent on the separately
-  authorized discovery-boundary expansion above.
+  Use the existing configured municipality allowlist; retain the separate live
+  second-municipality validation above.
 
 ## Planned: selective runtime refresh
 

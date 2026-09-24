@@ -4,6 +4,9 @@ services:
     build: .
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      SWISSCOM_KEY: ${SWISSCOM_KEY:-}
+      PUBLICAI_API_KEY: ${PUBLICAI_API_KEY:-}
     volumes:
       - ./artifacts:/artifacts
     read_only: true

@@ -9,6 +9,46 @@ from pathlib import Path
 from publicai.contracts import CAPABILITY_IDS, Discovery, load_discovery
 from publicai.runtime import TOOL_NAMES, ResponseEnvelope, SnapshotRuntime, create_server
 
+_FAILURE_MESSAGES = {
+    "unknown_office": "Unknown office filters must be explicit.",
+    "office_normalization": "Office labels must match after case and whitespace normalization.",
+    "missing_zone": "Zone-dependent dates must not be returned without a zone.",
+    "zone_choices": "Missing zone choices.",
+    "date_boundaries": "Default inclusive 30-day interval lost boundary dates.",
+    "empty_interval": "Explicitly covered empty intervals must return no_matching_dates.",
+    "uncovered_interval": (
+        "Uncovered intervals must retain guidance without claiming no collection."
+    ),
+    "conditions": "Conditional requirements lost their conditions.",
+    "undated_snapshot": "Undated snapshots must not be labelled current.",
+    "expired_snapshot": "Expired validity must be explicit.",
+    "invalid_interval": "Invalid or oversized date ranges must be tool errors.",
+    "tool_catalogue": "Package does not expose exactly the six standard tools.",
+    "tool_signature": "Tool signature differs from the fixed catalogue: {tool}.",
+    "tool_schema": "Tool schema differs from the maintained contract: {tool}.",
+    "tool_annotations": "Tool read-only/offline annotations missing: {tool}.",
+    "tool_response": "Tool has no successful structured and readable response: {tool}.",
+    "tool_identity": "Tool response has incorrect snapshot identity: {tool}.",
+    "tool_evidence": "Tool response lacks evidence or an explicit snapshot label: {tool}.",
+    "input_error": "Conformance could not complete: invalid snapshot or input.",
+    "filesystem_error": "Conformance could not complete: snapshot filesystem error.",
+}
+_MAX_DIAGNOSTIC_CHARACTERS = 64 * 1024
+
+
+def safe_failure_messages(output: str) -> list[str]:
+    """Select bounded, deduplicated maintained messages without forwarding arbitrary output."""
+    allowed = {
+        message.format(tool=tool)
+        for message in _FAILURE_MESSAGES.values()
+        for tool in TOOL_NAMES.values()
+    }
+    return list(
+        dict.fromkeys(
+            line for line in output[:_MAX_DIAGNOSTIC_CHARACTERS].splitlines() if line in allowed
+        )
+    )
+
 
 def check_conformance(discovery_path: Path | None = None) -> list[str]:
     """Check fixed expected behavior and each package's real MCP tool contracts.
@@ -32,28 +72,28 @@ def _fixture_checks(discovery: Discovery) -> list[str]:
     failures = []
     runtime = SnapshotRuntime(discovery, today=date(2026, 10, 1))
     if runtime.query("office_hours", office="unknown").outcome != "unknown_filter":
-        failures.append("Unknown office filters must be explicit.")
+        failures.append(_FAILURE_MESSAGES["unknown_office"])
     if (
         runtime.query("office_hours", office=" KANZLEI ").data.entries[0].hours[0].value
         != "Montag 09:00–11:00"
     ):
-        failures.append("Office labels must match after case and whitespace normalization.")
+        failures.append(_FAILURE_MESSAGES["office_normalization"])
     unzoned = runtime.query("garbage_collection")
     if unzoned.outcome != "needs_input" or unzoned.data.entries:
-        failures.append("Zone-dependent dates must not be returned without a zone.")
+        failures.append(_FAILURE_MESSAGES["missing_zone"])
     if unzoned.available_choices.get("zone") != ["Nord", "Süd"]:
-        failures.append("Missing zone choices.")
+        failures.append(_FAILURE_MESSAGES["zone_choices"])
     waste = runtime.query("garbage_collection", zone="Nord")
     if [item.value for item in waste.data.entries[0].dates] != [
         date(2026, 10, 1),
         date(2026, 10, 30),
     ]:
-        failures.append("Default inclusive 30-day interval lost boundary dates.")
+        failures.append(_FAILURE_MESSAGES["date_boundaries"])
     complete_empty = runtime.query(
         "garbage_collection", zone="Nord", date_from="2026-10-02", date_to="2026-10-03"
     )
     if complete_empty.outcome != "no_matching_dates":
-        failures.append("Explicitly covered empty intervals must return no_matching_dates.")
+        failures.append(_FAILURE_MESSAGES["empty_interval"])
     incomplete = runtime.query(
         "garbage_collection", zone="Nord", date_from="2026-11-01", date_to="2026-11-02"
     )
@@ -61,24 +101,24 @@ def _fixture_checks(discovery: Discovery) -> list[str]:
         incomplete.outcome != "information_unavailable"
         or not incomplete.data.entries[0].instructions
     ):
-        failures.append("Uncovered intervals must retain guidance without claiming no collection.")
+        failures.append(_FAILURE_MESSAGES["uncovered_interval"])
     moving = runtime.query("move_in")
     if moving.data.entries[0].requirements[0].conditions[0].value != "Bei Zuzug aus dem Ausland.":
-        failures.append("Conditional requirements lost their conditions.")
+        failures.append(_FAILURE_MESSAGES["conditions"])
     if moving.snapshot.status != "undated":
-        failures.append("Undated snapshots must not be labelled current.")
+        failures.append(_FAILURE_MESSAGES["undated_snapshot"])
     expired = SnapshotRuntime(discovery, today=date(2027, 1, 1)).query(
         "garbage_collection", zone="Nord"
     )
     if expired.snapshot.status != "expired":
-        failures.append("Expired validity must be explicit.")
+        failures.append(_FAILURE_MESSAGES["expired_snapshot"])
     for start, end in [("2026-10-03", "2026-10-02"), ("2026-10-01", "2026-12-30")]:
         try:
             runtime.query("garbage_collection", zone="Nord", date_from=start, date_to=end)
         except ValueError:
             pass
         else:
-            failures.append("Invalid or oversized date ranges must be tool errors.")
+            failures.append(_FAILURE_MESSAGES["invalid_interval"])
     return failures
 
 
@@ -112,7 +152,7 @@ async def _mcp_checks(fixture: Discovery, candidate: Discovery) -> list[str]:
     expected = {tool.name: tool for tool in await expected_server.list_tools()}
     actual = {tool.name: tool for tool in await server.list_tools()}
     if set(actual) != set(expected_signatures):
-        failures.append("Package does not expose exactly the six standard tools.")
+        failures.append(_FAILURE_MESSAGES["tool_catalogue"])
         return failures
     for capability in CAPABILITY_IDS:
         name = TOOL_NAMES[capability]
@@ -122,31 +162,31 @@ async def _mcp_checks(fixture: Discovery, candidate: Discovery) -> list[str]:
             or tool.input_schema.get("required")
             or set((tool.output_schema or {}).get("properties", {})) != expected_envelope
         ):
-            failures.append(f"Tool signature differs from the fixed catalogue: {name}.")
+            failures.append(_FAILURE_MESSAGES["tool_signature"].format(tool=name))
         if (
             tool.input_schema != expected[name].input_schema
             or tool.output_schema != expected[name].output_schema
         ):
-            failures.append(f"Tool schema differs from the maintained contract: {name}.")
+            failures.append(_FAILURE_MESSAGES["tool_schema"].format(tool=name))
         if not tool.annotations or (
             tool.annotations.read_only_hint is not True
             or tool.annotations.destructive_hint is not False
             or tool.annotations.idempotent_hint is not True
             or tool.annotations.open_world_hint is not False
         ):
-            failures.append(f"Tool read-only/offline annotations missing: {name}.")
+            failures.append(_FAILURE_MESSAGES["tool_annotations"].format(tool=name))
         result = await server.call_tool(name, {})
         if result.is_error or not result.structured_content or not result.content:
-            failures.append(f"Tool has no successful structured and readable response: {name}.")
+            failures.append(_FAILURE_MESSAGES["tool_response"].format(tool=name))
             continue
         envelope = ResponseEnvelope.model_validate(result.structured_content)
         if (
             envelope.capability != capability
             or envelope.snapshot.discovery_id != candidate.discovery_id
         ):
-            failures.append(f"Tool response has incorrect snapshot identity: {name}.")
+            failures.append(_FAILURE_MESSAGES["tool_identity"].format(tool=name))
         if not envelope.evidence or "Build-time snapshot" not in result.content[0].text:
-            failures.append(f"Tool response lacks evidence or an explicit snapshot label: {name}.")
+            failures.append(_FAILURE_MESSAGES["tool_evidence"].format(tool=name))
     return failures
 
 
@@ -158,7 +198,8 @@ def main() -> None:
     try:
         failures = check_conformance(args.discovery)
     except (OSError, ValueError) as error:
-        print(f"Conformance could not complete: {error}", file=sys.stderr)
+        reason = "filesystem_error" if isinstance(error, OSError) else "input_error"
+        print(_FAILURE_MESSAGES[reason], file=sys.stderr)
         raise SystemExit(1) from error
     if failures:
         print("\n".join(failures), file=sys.stderr)

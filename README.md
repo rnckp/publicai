@@ -89,6 +89,12 @@ the unresolved-capability list is `null`. Request/time budgets are distinguished
 from page size, nesting, and redirect limits.
 For semantic review rejections, inspect `review.json` beside `diagnostic.json` for
 the rejected claim paths and reasons; no discovery is published until review passes.
+The reviewer receives the full retained text of every cited source, including
+identity evidence, before source minimization. This context counts toward the
+configured model/token limits; exceeding them fails the run rather than omitting
+source context. Semantic review remains best-effort.
+Build conformance failures retain the child exit code and recognized check messages
+in `conformance.json` beside the failure report; arbitrary child output is omitted.
 
 ## Try Apertus 1.5 through Swisscom
 
@@ -220,6 +226,8 @@ not that the municipality lacks the service. Explicit denials include citations.
 These statuses are derived from existing reviewed fields, so older snapshots still load.
 Generated template version 1.1.0 adds these two MCP response fields; clients that
 validate an exact response-key set must update their schema.
+Version 1.1.1 corrects conflict-related date uncertainty and imported identity checks
+without changing the response schema. Rebuild existing packages to apply these fixes.
 Requirements retain their conditions; form fields do not imply an exhaustive
 procedure. Conflicting claims are reported separately from definitive answers.
 A package can have partial coverage when identity and review checks pass and at
@@ -231,7 +239,9 @@ a zone; no address mapping is inferred. Collection date windows are inclusive,
 use Europe/Zurich, default to today through 29 days later, and cannot exceed 90
 calendar days. General instructions survive missing dates. Absence of dates is
 only `no_matching_dates` when an explicit published interval covers the whole
-query. Undated and expired snapshots are labeled accordingly. Rebuild to update.
+query and no unresolved collection conflicts remain. Collection conflicts produce
+`information_unavailable` while preserving undisputed dates and general guidance.
+Undated and expired snapshots are labeled accordingly. Rebuild to update.
 
 ## Generated package
 
@@ -284,7 +294,9 @@ shared mutable image tag. Container health checks probe the running loopback MCP
 server; `--check` remains an offline snapshot validation command.
 
 The repository's factory container can also run the CLI. Model credentials belong
-only to the factory process; generated runtime containers do not inherit them.
+only to the factory process; Compose forwards `EXA_API_KEY` and the supported model
+provider keys from the host environment or `.env`. Generated runtime containers do
+not inherit them.
 
 ## Validate
 

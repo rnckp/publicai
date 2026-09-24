@@ -19,9 +19,10 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from publicai.conformance import safe_failure_messages
 from publicai.contracts import Discovery, discovery_status, load_discovery, packaging_issues
 
-TEMPLATE_VERSION = "1.1.0"
+TEMPLATE_VERSION = "1.1.1"
 _SOURCE = Path(__file__).parent
 _TEMPLATES = _SOURCE / "templates"
 _RUNTIME_FILES = ("contracts.py", "runtime.py", "conformance.py")
@@ -71,6 +72,19 @@ class BuildError(Exception):
         """Record the safe failure message and its report location."""
         super().__init__(message)
         self.diagnostic_path = diagnostic_path
+
+
+class _ConformanceError(ValueError):
+    """Carry only allowlisted diagnostics across the conformance process boundary."""
+
+    def __init__(self, returncode: int, output: str) -> None:
+        """Retain the exit status and recognized contract failures only."""
+        self.returncode = returncode
+        self.failures = safe_failure_messages(output)
+        details = "; ".join(self.failures) or "No recognized check diagnostics were emitted."
+        super().__init__(
+            f"Maintained package conformance failed (return code {returncode}): {details}"
+        )
 
 
 def _markdown(value: object) -> str:
@@ -318,6 +332,8 @@ Unknown values report available choices. Garbage collection supports waste type,
 ISO date filters; dates are inclusive in Europe/Zurich, default to today through 29 days
 later, and cannot exceed 90 days. Zone-specific answers require a zone. Published prose
 is never expanded into collection dates. Unknown interval coverage stays explicit.
+Unresolved collection conflicts keep date coverage incomplete; undisputed dates
+and general guidance remain available.
 
 Coverage (`supported`, `partial`, `handoff_only`, `unavailable`) describes the inventory;
 query outcome describes the individual answer. Undiscovered information remains absent.
@@ -397,7 +413,7 @@ def _run_conformance(package: Path) -> None:
             check=False,
         )
         if result.returncode:
-            raise ValueError("Maintained package conformance failed")
+            raise _ConformanceError(result.returncode, result.stderr)
 
 
 def _manifest(package: Path, discovery: Discovery, build_id: str) -> None:
@@ -470,6 +486,11 @@ def build(
         diagnostics = out / f"diagnostic-{build_id}"
         diagnostics.mkdir()
         diagnostic_path = diagnostics / "report.md"
+        if isinstance(error, _ConformanceError):
+            _json(
+                diagnostics / "conformance.json",
+                {"returncode": error.returncode, "failures": error.failures},
+            )
         message = "Discovery validation or package conformance failed"
         if isinstance(error, ValidationError):
             details = "; ".join(

@@ -169,6 +169,8 @@ class SnapshotRuntime:
                 and snapshot.valid_to
                 and snapshot.valid_from <= start
                 and end <= snapshot.valid_to
+                # Conflict fields are free text, so complete date knowledge cannot be assumed.
+                and not capability.conflicts
             )
         filters = {
             "office_hours": ("office", office),

@@ -40,20 +40,23 @@ def test_progress_is_visible_before_work_finishes_and_cleans_up_on_error(
 
 
 def test_cli_reports_safe_discovery_failure_reason(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import typer
 
     from publicai.cli import _failure
     from publicai.pipeline import DiscoveryError
 
+    output = StringIO()
+    monkeypatch.setattr(
+        "publicai.cli.console", Console(file=output, width=20, soft_wrap=True, force_terminal=False)
+    )
+    diagnostic_path = tmp_path / "diagnostic.json"
     with pytest.raises(typer.Exit):
-        _failure(
-            DiscoveryError("Semantic review rejected the inventory.", tmp_path / "diagnostic.json")
-        )
-    output = capsys.readouterr().err
-    assert "Semantic review rejected the inventory." in output
-    assert "diagnostic.json" in output
+        _failure(DiscoveryError("Semantic review rejected the inventory.", diagnostic_path))
+    assert output.getvalue() == (
+        f"Semantic review rejected the inventory.\nFailed. Diagnostic: {diagnostic_path}\n"
+    )
 
 
 def test_cli_shows_review_findings_without_model_reasons(

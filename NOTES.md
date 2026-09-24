@@ -53,9 +53,17 @@
   Current defaults use `gpt-6-sol` for discovery and `gpt-6-luna` for review.
   Earlier live Luna discovery attempts failed schema/evidence checks; this is
   historical test evidence, not a guarantee about future model behavior.
-- Full-context review precedes snapshot minimization. Source hashes identify
-  retained excerpts and relevant observed links, not original HTML responses.
+- Every cited source is supplied in full in the initial reviewer input before
+  snapshot minimization; selected excerpts or optional source-tool calls cannot
+  substitute for that context. This increases review input tokens, so existing
+  model/token/time limits still apply and review failure prevents publication.
+  Source hashes identify retained excerpts and relevant observed links, not original
+  HTML responses.
   They support reproducible checks but do not prove source authenticity.
+- Garbage-collection conflicts have free-text scope. Any such conflict therefore
+  makes date-interval coverage incomplete, even when published bounds cover it;
+  undisputed dates and general guidance remain available. Do not infer an empty
+  schedule from dates omitted because they are disputed.
 - Form labels and required markers are acquisition observations, not complete
   procedural requirements. An empty or over-nested optional page is recorded
   as an acquisition gap; final identity and useful-evidence checks still apply.

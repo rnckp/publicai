@@ -1,6 +1,7 @@
 """Shared snapshot service behavior independent of model providers."""
 
 import asyncio
+import hashlib
 import re
 import sys
 from datetime import date
@@ -111,6 +112,40 @@ def test_partial_coverage_never_claims_no_dates(runtime: SnapshotRuntime) -> Non
         "garbage_collection", zone="Nord", date_from="2026-10-02", date_to="2026-10-03"
     )
     assert result.outcome == "no_matching_dates"
+
+
+@pytest.mark.parametrize(
+    "start,expected_dates",
+    [("2026-10-30", []), ("2026-10-01", [date(2026, 10, 1)])],
+)
+def test_conflicted_collection_dates_preserve_uncertainty_and_undisputed_guidance(
+    discovery: Discovery, start: str, expected_dates: list[date]
+) -> None:
+    """Omitting a disputed date must not establish an empty or complete schedule."""
+    payload = discovery.model_dump(mode="json")
+    source = payload["sources"][1]
+    claims = []
+    for day in ("2026-10-29", "2026-10-30"):
+        excerpt = f"Nord: Kehrichtabfuhr am {day}."
+        source["text"] += "\n" + excerpt
+        claims.append({"value": day, "evidence": [{"source_id": source["id"], "excerpt": excerpt}]})
+    source["sha256"] = hashlib.sha256(source["text"].encode()).hexdigest()
+    capability = payload["capabilities"]["garbage_collection"]
+    capability["entries"][0]["dates"].pop()
+    capability["conflicts"] = [{"field": "dates", "claims": claims}]
+    capability["coverage"] = "partial"
+    runtime = SnapshotRuntime(Discovery.model_validate(payload), today=date(2026, 10, 1))
+
+    result = runtime.query("garbage_collection", zone="Nord", date_from=start, date_to="2026-10-30")
+
+    assert result.outcome == "information_unavailable"
+    assert result.snapshot.interval_covered is False
+    assert result.snapshot.valid_from == date(2026, 10, 1)
+    assert result.snapshot.valid_to == date(2026, 10, 31)
+    assert [item.value for item in result.data.entries[0].dates] == expected_dates
+    assert result.data.entries[0].instructions == (
+        discovery.capabilities["garbage_collection"].entries[0].instructions
+    )
 
 
 @pytest.mark.parametrize("start,end", [("2026-10-03", "2026-10-02"), ("2026-10-01", "2026-12-30")])
