@@ -42,6 +42,10 @@ class ModelConfigurationError(ValueError):
     """An actionable local configuration error with no sensitive payload."""
 
 
+class ReviewValidationError(ValueError):
+    """A trusted review rejection message without model-authored text or payloads."""
+
+
 class CapabilityInventory(TypedDict):
     """Fixed keys let the model provider enforce the complete catalogue during generation."""
 
@@ -221,17 +225,23 @@ def validate_review(decision: ReviewDecision, claims: dict[str, dict[str, Any]])
     """Require complete affirmative review; do not silently repair a failed review."""
     paths = [check.path for check in decision.checks]
     if len(paths) != len(set(paths)) or set(paths) != set(claims):
-        raise ValueError("Semantic review must check every claim exactly once.")
+        raise ReviewValidationError("Semantic review must check every claim exactly once.")
     if not decision.identity_consistent:
-        raise ValueError("Semantic review found inconsistent municipality identity.")
+        raise ReviewValidationError("Semantic review found inconsistent municipality identity.")
     if any(
         check.status == "unsupported"
         or (check.status == "conflicting" and ".conflicts." not in check.path)
         for check in decision.checks
     ):
-        raise ValueError("Semantic review found unsupported or conflicting claims.")
+        raise ReviewValidationError(
+            "Semantic review found unsupported or conflicting claims. "
+            "See review.json beside the diagnostic for claim paths and reasons."
+        )
     if decision.issues:
-        raise ValueError("Semantic review reported blocking issues.")
+        raise ReviewValidationError(
+            "Semantic review reported blocking issues. "
+            "See review.json beside the diagnostic for details."
+        )
 
 
 def create_agents(

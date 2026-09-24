@@ -56,6 +56,8 @@ def _failure(error: Exception) -> None:
     from publicai.pipeline import DiscoveryError
 
     if isinstance(error, (BuildError, DiscoveryError)):
+        if isinstance(error, DiscoveryError):
+            console.print(str(error), style="red", markup=False)
         console.print(f"Failed. Diagnostic: {error.diagnostic_path}", style="red", markup=False)
     elif isinstance(error, (ModelConfigurationError, CrawlError)):
         console.print(str(error), style="red", markup=False)

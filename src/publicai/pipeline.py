@@ -17,6 +17,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart
 from publicai.agents import (
     DiscoveryContext,
     FactoryAgents,
+    ReviewValidationError,
     claim_records,
     live_agents,
     usage_limits,
@@ -194,7 +195,9 @@ async def discover_with_agents(
             "discovery_id": discovery_id,
             "error_type": type(error).__name__,
             "stage": stage,
-            "message": "Discovery failed validation, acquisition, model execution, or review.",
+            "message": str(error)
+            if isinstance(error, ReviewValidationError)
+            else "Discovery failed validation, acquisition, model execution, or review.",
             "request_count": crawler.request_count,
             "failures": [failure.model_dump() for failure in crawler.failures],
             "validation_issues": context.validation_issues,

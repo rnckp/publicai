@@ -45,6 +45,8 @@ overwritten. Failed discovery/review/build attempts produce diagnostic artifacts
 and a nonzero exit code. Local artifacts are ignored by Git.
 Successful discoveries include `metrics.json` with duration, website requests and
 per-agent token/tool usage. Diagnostics retain safe validation details, not API payloads.
+For semantic review rejections, inspect `review.json` beside `diagnostic.json` for
+the rejected claim paths and reasons; no discovery is published until review passes.
 
 ## The two agents and their boundaries
 

@@ -8,6 +8,11 @@ Minimum structured coverage for supported:
 - garbage_collection: at least one waste type with actionable collection
   instructions. Dated entries are optional.
 - recycling: at least one material with an explicit disposal route or point.
+  Store the disposal route in entries[].instructions or the disposal point in
+  entries[].locations, with supporting evidence. A collection-point name in
+  label alone, even alongside materials and hours, does not satisfy the
+  structured minimum; that inventory remains partial. Review coverage against
+  the populated structured fields, not information left only in labels or sources.
 - move_in: explicit registration guidance AND an official contact or registration
   destination. A page/form title alone is a service handoff, not guidance.
 - move_out: explicit deregistration guidance AND an official contact or

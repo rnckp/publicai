@@ -14,6 +14,22 @@ from publicai.contracts import Discovery
 from publicai.runtime import SnapshotRuntime, create_server
 
 
+def test_recycling_point_must_be_in_structured_location_field() -> None:
+    from publicai.contracts import Capability, EvidenceRef, Fact, ServiceEntry, classify_coverage
+
+    evidence = [EvidenceRef(source_id="source-1", excerpt="Glas: Sammelstelle Testplatz")]
+    point = Fact(value="Sammelstelle Testplatz", evidence=evidence)
+    entry = ServiceEntry(
+        id="glass",
+        label=point,
+        materials=[Fact(value="Glas", evidence=evidence)],
+    )
+    capability = Capability(coverage="partial", entries=[entry])
+    assert classify_coverage("recycling", capability) == "partial"
+    entry.locations = [point]
+    assert classify_coverage("recycling", capability) == "supported"
+
+
 @pytest.fixture
 def payload() -> dict[str, Any]:
     """Load an independently authored, explicitly fictional inventory."""

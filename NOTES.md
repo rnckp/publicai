@@ -1,5 +1,10 @@
 # Durable implementation notes
 
+- A live recycling review rejected `partial` because a collection-point label
+  looked sufficient, but deterministic coverage requires `locations` or
+  `instructions`. Both agents share explicit field guidance in the catalogue;
+  labels alone must not be treated as structured disposal guidance. Review
+  rejections use trusted error messages; arbitrary SDK exception text stays hidden.
 - The authorized website hostname is exactly `www.ausserberg.ch`. External
   portal URLs can be retained as handoffs but are never fetched. The OpenAI API
   connection is separate from website retrieval. `config.yaml` does not widen

@@ -16,6 +16,23 @@ from publicai.cli import app
 from publicai.config import Settings
 
 
+def test_cli_reports_safe_discovery_failure_reason(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import typer
+
+    from publicai.cli import _failure
+    from publicai.pipeline import DiscoveryError
+
+    with pytest.raises(typer.Exit):
+        _failure(
+            DiscoveryError("Semantic review rejected the inventory.", tmp_path / "diagnostic.json")
+        )
+    output = capsys.readouterr().err
+    assert "Semantic review rejected the inventory." in output
+    assert "diagnostic.json" in output
+
+
 @pytest.fixture(autouse=True)
 def restore_cli_logger(monkeypatch: pytest.MonkeyPatch) -> None:
     """Do not leave a logger pointing to CliRunner's closed capture stream."""

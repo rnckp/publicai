@@ -144,6 +144,9 @@ async def test_incomplete_semantic_review_never_publishes(
             "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler
         )
     assert error.value.diagnostic_path.is_file()
+    diagnostic = json.loads(error.value.diagnostic_path.read_text())
+    assert diagnostic["message"] == "Semantic review must check every claim exactly once."
+    assert str(error.value) == diagnostic["message"]
     assert not list(tmp_path.glob("discovery-*"))
     assert not list(tmp_path.glob(".staging-*"))
 
@@ -161,6 +164,22 @@ def test_minimization_removes_uncited_text_and_links() -> None:
     )
     assert minimized.identity == discovery.identity
     assert minimized.capabilities == discovery.capabilities
+
+
+async def test_provider_error_payload_is_not_exposed(tmp_path: Path) -> None:
+    agents, crawler = fixture_agents(Settings())
+
+    def fail(messages: object, info: object) -> ModelResponse:
+        raise ValueError("private-provider-payload")
+
+    with agents.reviewer.override(model=FunctionModel(fail)):
+        with pytest.raises(DiscoveryError) as error:
+            await discover_with_agents(
+                "https://www.ausserberg.ch/", tmp_path, Settings(), agents, crawler
+            )
+    assert "private-provider-payload" not in str(error.value)
+    assert "private-provider-payload" not in error.value.diagnostic_path.read_text()
+    assert not list(tmp_path.glob("discovery-*"))
 
 
 def test_minimization_preserves_uninspected_document_evidence() -> None:
