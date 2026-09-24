@@ -146,6 +146,28 @@ uv run --frozen --no-dev municipality-mcp --discovery discovery.json --transport
 docker compose up --build
 ```
 
+### Connect from ChatGPT desktop or Codex
+
+Keep the Streamable HTTP server above running, then in the **ChatGPT desktop app**
+open **Settings → MCP servers → Add server**. Name it `municipality`, choose
+**Streamable HTTP**, and enter `http://127.0.0.1:8000/mcp`. Save and select
+**Restart**. In the composer, type `/mcp` to confirm the server and its tools appear.
+The Codex CLI and IDE extension share this MCP configuration with the desktop app.
+
+Alternatively, configure it from a terminal on the same computer:
+
+```sh
+codex mcp add municipality --url http://127.0.0.1:8000/mcp
+codex mcp list
+```
+
+These steps are for the local desktop/CLI/IDE clients. ChatGPT **web** cannot
+reach your computer's loopback address through this configuration; a private
+server needs a [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+or another reachable HTTPS endpoint and a developer-mode connection.
+See OpenAI's [MCP setup guide](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+for the current client steps.
+
 The HTTP launch defaults to loopback. Container port mapping also uses loopback;
 production authentication and public hosting are deferred. The generated
 container runs as a dedicated non-root user with a read-only filesystem,
