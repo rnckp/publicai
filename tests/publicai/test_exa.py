@@ -65,6 +65,35 @@ async def test_search_then_fetch_uses_pydantic_exa_and_retains_page() -> None:
     assert calls == ["/search", "/contents"]
 
 
+async def test_other_municipality_scopes_search_and_fetch() -> None:
+    url = "https://www.riehen.ch/kontakt"
+    calls = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        calls.append((request.url.path, payload))
+        if request.url.path == "/search":
+            return httpx.Response(
+                200, json={"results": [{"url": url}, {"url": "https://evil.example/"}]}
+            )
+        return httpx.Response(200, json={"results": [{"url": url, "text": "Gemeinde Riehen"}]})
+
+    async with ExaRetriever(
+        CrawlSettings(),
+        ExaSettings(request_interval=0.01),
+        allowed_host="www.riehen.ch",
+        api_key="test-key",
+        transport=httpx.MockTransport(respond),
+    ) as retriever:
+        results = await retriever.search("Kontakt")
+        assert [result.url for result in results.results] == [url]
+        assert (await retriever.fetch(url)).url == url
+        with pytest.raises(CrawlError):
+            await retriever.fetch("https://www.ausserberg.ch/")
+    assert calls[0][1]["includeDomains"] == ["www.riehen.ch"]
+    assert calls[1][1]["urls"] == [url]
+
+
 @pytest.mark.parametrize(
     "url", ["https://evil.example/", "http://127.0.0.1/", "https://www.ausserberg.ch/calendar.pdf"]
 )

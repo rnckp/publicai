@@ -139,7 +139,7 @@ def discover(
         str | None, typer.Option(help="Evidence-review model; takes precedence over --model.")
     ] = None,
 ) -> None:
-    """Inspect www.ausserberg.ch and retain a reviewed discovery artifact."""
+    """Inspect an allowed municipality and retain a reviewed discovery artifact."""
     from publicai.pipeline import discover as discover_pipeline
 
     try:

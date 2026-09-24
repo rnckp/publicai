@@ -1,12 +1,13 @@
-"""Validated operator settings; website permissions are deliberately not configurable."""
+"""Validated operator settings and explicit municipality website permissions."""
 
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from publicai.contracts import validate_url
 from publicai.crawler import CrawlSettings
 
 
@@ -86,6 +87,7 @@ class Settings(BaseModel):
     """Factory settings loaded from an operator-controlled YAML file."""
 
     model_config = ConfigDict(extra="forbid")
+    allowed_hosts: list[str] = Field(default_factory=lambda: ["www.ausserberg.ch"], min_length=1)
     mode: AgentMode = AgentMode.OPENAI
     apertus: ApertusSettings = Field(default_factory=ApertusSettings)
     publicai: PublicAISettings = Field(default_factory=PublicAISettings)
@@ -95,6 +97,23 @@ class Settings(BaseModel):
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
     crawl: CrawlSettings = Field(default_factory=CrawlSettings)
     run_timeout: float = Field(default=600, gt=0, le=600)
+
+    @field_validator("allowed_hosts")
+    @classmethod
+    def validate_allowed_hosts(cls, hosts: list[str]) -> list[str]:
+        """Require exact public DNS hostnames without URLs, ports, or duplicates."""
+        if len(hosts) != len(set(hosts)):
+            raise ValueError("Allowed municipality hosts must be unique.")
+        for host in hosts:
+            if (
+                not host
+                or host != host.lower()
+                or host.endswith(".")
+                or any(char in host for char in "/:@?#")
+            ):
+                raise ValueError("Allowed municipality hosts must be plain lowercase DNS names.")
+            validate_url(f"https://{host}/", municipality_only=True)
+        return hosts
 
     @property
     def active_model(self) -> OpenAISettings | ApertusSettings | PublicAISettings:

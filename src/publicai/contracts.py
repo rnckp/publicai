@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 CONTRACT_VERSION = "1.0"
-ALLOWED_HOST = "www.ausserberg.ch"
+_DOCUMENT_ROUTE_HOST = "www.ausserberg.ch"
 type CapabilityId = Literal[
     "office_hours", "garbage_collection", "recycling", "move_in", "move_out", "problem_reporting"
 ]
@@ -104,7 +104,7 @@ class SourceSnapshot(StrictModel):
 
     @model_validator(mode="after")
     def verify_snapshot(self) -> Self:
-        """Check the exact retained bytes and the deployment's host restriction."""
+        """Check the exact retained bytes and safe source URL syntax."""
         validate_url(self.url, municipality_only=True)
         if self.kind == "homepage" and urlsplit(self.url).path not in {"", "/"}:
             raise ValueError("A homepage source must be the municipality's root homepage URL.")
@@ -228,6 +228,7 @@ class Discovery(StrictModel):
     def validate_inventory(self) -> Self:
         """Validate identities, citations, boundaries and minimum service coverage."""
         validate_url(self.official_url, municipality_only=True)
+        allowed_host = urlsplit(self.official_url).hostname
         if set(self.capabilities) != set(CAPABILITY_IDS):
             raise ValueError("The discovery must include exactly all six capabilities.")
         sources = {source.id: source for source in self.sources}
@@ -239,6 +240,8 @@ class Discovery(StrictModel):
                 raise ValueError(f"Unknown evidence source: {ref.source_id}.")
             if normalize_whitespace(ref.excerpt) not in normalize_whitespace(source.text):
                 raise ValueError(f"Evidence excerpt is absent from source {ref.source_id}.")
+        if any(urlsplit(source.url).hostname != allowed_host for source in self.sources):
+            raise ValueError("All retained sources must use the official municipality host.")
         name = normalize_whitespace(self.identity.name.value).casefold()
         identity_sources = {
             ref.source_id
@@ -350,8 +353,6 @@ def validate_url(value: str, *, municipality_only: bool = False) -> None:
             or getattr(address, "ipv4_mapped", None)
         ):
             raise ValueError("Nonpublic IP destinations are forbidden.")
-    if municipality_only and url.hostname.lower() != ALLOWED_HOST:
-        raise ValueError(f"Source URLs must use the authorized host {ALLOWED_HOST}.")
 
 
 def is_public_document_link(value: str) -> bool:
@@ -361,7 +362,7 @@ def is_public_document_link(value: str) -> bool:
     Duplicate keys, unknown parameters and arbitrary session values are rejected.
     """
     url = urlsplit(value)
-    if url.hostname != ALLOWED_HOST or url.path not in {"", "/"} or len(url.query) > 256:
+    if url.hostname != _DOCUMENT_ROUTE_HOST or url.path not in {"", "/"} or len(url.query) > 256:
         return False
     try:
         pairs = parse_qsl(url.query, strict_parsing=True)

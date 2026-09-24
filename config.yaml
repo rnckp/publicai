@@ -1,6 +1,28 @@
 # Model API connections are separate from website retrieval permissions.
-# Exa requests and returned page URLs are restricted to www.ausserberg.ch.
+# Each run may fetch only its selected host from this list.
 # Both search and fetch use Exa for every model mode.
+allowed_hosts:
+  - www.ausserberg.ch
+  - www.stadt-zuerich.ch
+  - www.bs.ch
+  - www.bern.ch
+  - www.stadtluzern.ch
+  - www.stadt.sg.ch
+  - www.chur.ch
+  - www.stadtzug.ch
+  - www.riehen.ch
+  - www.emmen.ch
+  - www.spreitenbach.ch
+  - www.kuesnacht.ch
+  - www.andelfingen.ch
+  - www.langnau-ie.ch
+  - www.trub.ch
+  - www.appenzell.org
+  - altdorf.ch
+  - www.glarus-sued.ch
+  - www.gde-engelberg.ch
+  - www.gemeindedavos.ch
+  - gemeinde.zermatt.ch
 mode: openai # openai, apertus (Swisscom), or publicai; CLI --mode overrides this.
 web_search_enabled: true # Exa search; Exa page retrieval remains enabled when false.
 exa:

@@ -136,6 +136,14 @@ def test_url_boundary_canonicalizes_fragments_and_default_ports() -> None:
     assert validate_url(BASE + ":443/contact#office") == BASE + "/contact"
 
 
+def test_url_boundary_uses_selected_municipality_host() -> None:
+    assert validate_url("https://www.riehen.ch/kontakt", "www.riehen.ch") == (
+        "https://www.riehen.ch/kontakt"
+    )
+    with pytest.raises(CrawlError, match="authorized municipality host"):
+        validate_url(BASE, "www.riehen.ch")
+
+
 def test_external_redirect_is_rejected_before_any_external_request() -> None:
     result, crawler, requests = run_fetch(
         {"/": (302, {"location": "https://evil.example/?secret=value"}, b"")}

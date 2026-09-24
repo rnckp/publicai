@@ -13,10 +13,17 @@ from pydantic_ai.models.function import FunctionModel
 
 from publicai.agents import Inventory, claim_records, create_agents
 from publicai.config import Settings
-from publicai.crawler import FetchedPage, Link, SafeCrawler
-from publicai.pipeline import DiscoveryError, discover_with_agents
+from publicai.crawler import CrawlError, FetchedPage, Link, SafeCrawler
+from publicai.pipeline import DiscoveryError, discover, discover_with_agents
 
 FIXTURE = Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
+
+
+async def test_live_discovery_rejects_host_missing_from_allowlist_before_services(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(CrawlError, match="allowed_hosts"):
+        await discover("https://www.riehen.ch/", tmp_path, Settings())
 
 
 async def test_optional_empty_contact_page_does_not_abort_discovery(tmp_path: Path) -> None:

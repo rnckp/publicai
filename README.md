@@ -1,9 +1,10 @@
 # Municipality MCP server factory
 
 A CLI-first factory that turns municipal HTML into an evidence-backed, read-only
-MCP server. Discovery is currently restricted to **`www.ausserberg.ch`**. The
-restriction is enforced on Exa requests and returned page URLs; it cannot be
-widened by a prompt or configuration file. Exa performs remote crawling, so its
+MCP server. Discovery accepts municipality hosts listed in `config.yaml` under
+`allowed_hosts`. Each run is restricted to its selected host on Exa requests and
+returned page URLs. The default config includes Ausserberg and all 20 hosts in
+`ideas-patrick/swiss_municipalities.md`. Exa performs remote crawling, so its
 DNS, robots, and intermediate redirect handling are outside this application.
 
 ## Run
@@ -25,6 +26,7 @@ conformance checks:
 
 ```sh
 uv run factory run https://www.ausserberg.ch/ --out artifacts
+uv run factory run https://www.riehen.ch/ --out artifacts
 ```
 
 While running, the CLI prints elapsed-time milestones, source/request counts,
@@ -332,10 +334,9 @@ requires `LOGFIRE_TOKEN`; standard `OTEL_EXPORTER_OTLP_*` settings can target an
 Aspire collector. No telemetry service is contacted unless enabled. Application
 logs contain event names and exception types on stderr, never SDK payloads.
 
-The original plan also requests a second municipality. That trial is deferred
-because the crawler currently permits only `www.ausserberg.ch`. The shared
-contracts and fictional fixtures exercise service variants without contacting
-another site. See [PLAN.md](PLAN.md) for outstanding validation.
+A live second-municipality trial has not been run. Offline tests now cover host
+selection and source validation for Riehen without contacting its site. See
+[PLAN.md](PLAN.md) for outstanding validation.
 
 The existing standalone OpenAI connectivity script remains available:
 `uv run python scripts/test_openai.py`.

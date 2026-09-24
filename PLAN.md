@@ -23,6 +23,37 @@
   refresh, and public hosting/authentication remain outside the implemented
   read-only HTML snapshot workflow.
 
+## TODO: municipality image publishing from the CLI
+
+- Extend `factory run` and standalone package publishing to build and push the
+  generated runtime image to GitHub Container Registry (GHCR), after review and
+  conformance pass. Start with local Docker Buildx; defer scheduled GitHub Actions
+  runs and remote builds until needed.
+- Add explicit publishing options (for example, `--push`, `--registry`, and
+  `--municipality`) with registry, namespace, and target-platform defaults in
+  `config.yaml`. Use a stable, validated lowercase municipality slug, with a canton
+  suffix for name collisions: `ghcr.io/<owner>/ausserberg:latest`.
+- Update the same municipality's `latest` tag on each successful publication;
+  preserve the last published image on failure and keep local build directories
+  immutable. Prevent overlapping publications from replacing a newer run with an
+  older one. Treat historical registry-version cleanup as a separate retention
+  policy; moving `latest` does not delete old images.
+- Use Docker registry login with a classic PAT scoped to `write:packages`; keep
+  credentials outside generated packages, images, and logs. Default packages to
+  private and attach the source-repository label. For future GitHub Actions, use
+  `GITHUB_TOKEN` with package-write permission and SHA-pinned actions.
+- Support explicit Linux target architectures (AMD64/ARM64 or both), report the
+  published image reference and digest, and validate the built container's startup
+  and health before updating `latest`. Include image vulnerability scanning.
+- Update generated Compose configuration and documentation to consume the stable
+  image reference. Explain that publishing does not update running containers:
+  deployment requires `docker compose pull` followed by `docker compose up -d`.
+  Keep automated deployment separate from publishing.
+- Test naming and input validation, successful publication, failed validation/build/
+  push, and overlapping runs; verify a real Docker build and authorized GHCR push.
+  Supporting municipalities beyond Ausserberg remains dependent on the separately
+  authorized discovery-boundary expansion above.
+
 ## Planned: selective runtime refresh
 
 Evolve toward a hybrid of reviewed discovery snapshots and bounded live lookups.

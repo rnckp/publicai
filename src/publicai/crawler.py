@@ -47,7 +47,7 @@ _MAX_HTML_DEPTH = 128
 
 
 class CrawlSettings(BaseModel):
-    """Operator limits; the host restriction is deliberately not configurable."""
+    """Operator limits for bounded municipal page acquisition."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     max_requests: int = Field(default=100, ge=1, le=1000)
@@ -102,7 +102,7 @@ class CrawlError(ValueError):
         self.reason = reason
 
 
-def validate_url(url: str) -> str:
+def validate_url(url: str, allowed_host: str = ALLOWED_HOST) -> str:
     """Canonicalize an authorized fetch URL, rejecting session-bearing URLs."""
     if not url or re.search(r"[\x00-\x20\x7f\\]", url):
         raise CrawlError("blocked", "URL contains whitespace or unsafe characters")
@@ -111,7 +111,7 @@ def validate_url(url: str) -> str:
         port = parts.port
     except ValueError as error:
         raise CrawlError("blocked", "Malformed URL") from error
-    if parts.scheme not in {"http", "https"} or parts.hostname != ALLOWED_HOST:
+    if parts.scheme not in {"http", "https"} or parts.hostname != allowed_host:
         raise CrawlError("blocked", "Only the authorized municipality host may be fetched")
     if parts.username is not None or parts.password is not None:
         raise CrawlError("blocked", "URL credentials are forbidden")
@@ -120,7 +120,14 @@ def validate_url(url: str) -> str:
     decoded_path = unquote(parts.path)
     if parts.query or ";" in decoded_path or re.search(r"[\x00-\x20\x7f\\]", decoded_path):
         raise CrawlError("blocked", "Query strings and unsafe path parameters are forbidden")
-    return urlunsplit((parts.scheme, ALLOWED_HOST, parts.path or "/", "", ""))
+    try:
+        validate_handoff_url(
+            urlunsplit((parts.scheme, parts.netloc, parts.path or "/", "", "")),
+            municipality_only=True,
+        )
+    except ValueError as error:
+        raise CrawlError("blocked", "Unsafe municipality host or URL") from error
+    return urlunsplit((parts.scheme, allowed_host, parts.path or "/", "", ""))
 
 
 async def resolve_addresses(host: str, port: int) -> list[str]:
@@ -166,8 +173,10 @@ class PublicNetworkBackend(httpcore.AsyncNetworkBackend):
         self,
         resolver: Resolver = resolve_addresses,
         backend: httpcore.AsyncNetworkBackend | None = None,
+        allowed_host: str = ALLOWED_HOST,
     ) -> None:
         self._resolver = resolver
+        self.allowed_host = allowed_host
         self._backend = backend or httpcore.AnyIOBackend()
 
     async def connect_tcp(
@@ -179,7 +188,7 @@ class PublicNetworkBackend(httpcore.AsyncNetworkBackend):
         socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
     ) -> httpcore.AsyncNetworkStream:
         """Pin the exact validated numeric address used by the socket."""
-        if host != ALLOWED_HOST or port not in {80, 443}:
+        if host != self.allowed_host or port not in {80, 443}:
             raise CrawlError("blocked", "Unauthorized network destination")
         addresses = await _public_addresses(self._resolver, host, port)
         return await self._backend.connect_tcp(
@@ -219,12 +228,12 @@ class _ResponseStream(httpx.AsyncByteStream):
 class _PinnedTransport(httpx.AsyncBaseTransport):
     """Use the public httpcore pool API with our constrained network backend."""
 
-    def __init__(self, resolver: Resolver, concurrency: int) -> None:
+    def __init__(self, resolver: Resolver, concurrency: int, allowed_host: str) -> None:
         self.pool = httpcore.AsyncConnectionPool(
             ssl_context=ssl.create_default_context(),
             max_connections=concurrency,
             max_keepalive_connections=0,
-            network_backend=PublicNetworkBackend(resolver),
+            network_backend=PublicNetworkBackend(resolver, allowed_host=allowed_host),
         )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
@@ -299,7 +308,7 @@ def _link(
         kind = "pdf"
     elif document_kind == "calendar" or suffix.endswith((".ics", ".ical")):
         kind = "calendar"
-    elif parts.hostname != ALLOWED_HOST:
+    elif parts.hostname != urlsplit(base).hostname:
         kind = "external"
     elif suffix.endswith(".json"):
         kind = "structured"
@@ -561,15 +570,18 @@ class SafeCrawler:
         *,
         resolver: Resolver | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        allowed_host: str = ALLOWED_HOST,
     ) -> None:
         self.settings = settings or CrawlSettings()
+        self.allowed_host = allowed_host
         self.failures: list[CrawlFailure] = []
         self.request_count = 0
         self.pages: dict[str, FetchedPage] = {}
         self.discovered_urls: list[str] = []
         self._resolver = resolver or resolve_addresses
         self._client = httpx.AsyncClient(
-            transport=transport or _PinnedTransport(self._resolver, self.settings.concurrency),
+            transport=transport
+            or _PinnedTransport(self._resolver, self.settings.concurrency, allowed_host),
             trust_env=False,
             follow_redirects=False,
             timeout=self.settings.request_timeout,
@@ -610,7 +622,7 @@ class SafeCrawler:
 
     def _record(self, url: str, error: CrawlError) -> None:
         try:
-            safe_url = validate_url(url)
+            safe_url = validate_url(url, self.allowed_host)
         except CrawlError:
             safe_url = "<blocked-url>"
         self.failures.append(CrawlFailure(url=safe_url, reason=error.reason, detail=str(error)))
@@ -622,7 +634,7 @@ class SafeCrawler:
             try:
                 async with asyncio.timeout(timeout):
                     await _public_addresses(
-                        self._resolver, ALLOWED_HOST, 443 if parts.scheme == "https" else 80
+                        self._resolver, self.allowed_host, 443 if parts.scheme == "https" else 80
                     )
                     self._remaining()
                     self.request_count += 1
@@ -686,7 +698,7 @@ class SafeCrawler:
         *,
         skip_robots: bool = False,
     ) -> tuple[str, int, httpx.Headers, bytes]:
-        current = validate_url(url)
+        current = validate_url(url, self.allowed_host)
         for redirects in range(self.settings.max_redirects + 1):
             suffix = unquote(urlsplit(current).path).lower()
             if suffix.endswith((".pdf", ".ics", ".ical")):
@@ -702,7 +714,7 @@ class SafeCrawler:
                     raise CrawlError("crawl_limit", "Redirect limit exceeded")
                 if "location" not in headers:
                     raise CrawlError("blocked", "Redirect has no destination")
-                current = validate_url(urljoin(current, headers["location"]))
+                current = validate_url(urljoin(current, headers["location"]), self.allowed_host)
                 continue
             return current, status, headers, body
         raise CrawlError("crawl_limit", "Redirect limit exceeded")
@@ -710,7 +722,7 @@ class SafeCrawler:
     async def fetch(self, url: str) -> FetchedPage:
         """Inspect public HTML or previously linked JSON through the same safe boundary."""
         try:
-            normalized = validate_url(url)
+            normalized = validate_url(url, self.allowed_host)
             if normalized in self.pages:
                 return self.pages[normalized]
             observed_link = next(
@@ -777,7 +789,7 @@ class SafeCrawler:
                 root = ElementTree.fromstring(body)
                 for element in root.iter():
                     if element.tag.rsplit("}", 1)[-1] == "loc" and element.text:
-                        candidate = validate_url(element.text.strip())
+                        candidate = validate_url(element.text.strip(), self.allowed_host)
                         if _SERVICE_WORDS.search(candidate) and not candidate.endswith(".xml"):
                             candidates.append(candidate)
             except ElementTree.ParseError:

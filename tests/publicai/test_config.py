@@ -14,11 +14,20 @@ def test_defaults_use_direct_openai_and_disable_telemetry() -> None:
     assert settings.telemetry.enabled is False
 
 
-def test_unknown_config_cannot_add_allowed_hosts(tmp_path: Path) -> None:
+def test_config_rejects_unsafe_allowed_hosts(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
-    path.write_text("allowed_hosts: [evil.example]\n")
+    path.write_text("allowed_hosts: [localhost]\n")
     with pytest.raises(ValidationError):
         load_settings(path)
+
+
+def test_config_includes_every_selected_municipality() -> None:
+    import re
+
+    selected = Path("ideas-patrick/swiss_municipalities.md").read_text()
+    hosts = set(re.findall(r"\| \[.*?\]\(https://([^/]+)/\) \|", selected))
+    assert len(hosts) == 20
+    assert hosts <= set(load_settings().allowed_hosts)
 
 
 def test_missing_explicit_config_fails(tmp_path: Path) -> None:

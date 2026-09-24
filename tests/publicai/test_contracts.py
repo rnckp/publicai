@@ -1,5 +1,6 @@
 """Evidence and version boundary regression tests using fictional content."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -21,6 +22,18 @@ def test_all_six_supported_examples_pass(discovery_payload: dict) -> None:
     assert len(discovery.capabilities) == 6
     assert packaging_issues(discovery) == []
     assert Discovery.model_validate_json(discovery.model_dump_json()) == discovery
+
+
+def test_discovery_accepts_other_municipality_with_matching_sources(
+    discovery_payload: dict,
+) -> None:
+    replacement = json.loads(
+        json.dumps(discovery_payload).replace("www.ausserberg.ch", "www.riehen.ch")
+    )
+    for source in replacement["sources"]:
+        source["sha256"] = hashlib.sha256(source["text"].encode()).hexdigest()
+    discovery = Discovery.model_validate(replacement)
+    assert discovery.official_url == "https://www.riehen.ch/"
 
 
 @pytest.mark.parametrize("mutation", ["version", "hash", "excerpt", "source", "identity", "host"])

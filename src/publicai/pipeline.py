@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from pydantic_ai import capture_run_messages
@@ -36,7 +37,7 @@ from publicai.contracts import (
     facts,
     normalize_whitespace,
 )
-from publicai.crawler import SafeCrawler, validate_url
+from publicai.crawler import CrawlError, SafeCrawler, validate_url
 from publicai.retrieval import ExaRetriever
 
 logger = logging.getLogger(__name__)
@@ -176,7 +177,7 @@ async def discover_with_agents(
     stage = "acquisition"
 
     try:
-        url = validate_url(url)
+        url = validate_url(url, urlsplit(url).hostname or "")
         context.official_url = url
         async with asyncio.timeout(settings.run_timeout):
             progress("Retrieving homepage and contact-page evidence")
@@ -354,10 +355,16 @@ async def discover(
     url: str, out: Path, settings: Settings, progress: Callable[[str], None] = lambda _: None
 ) -> Path:
     """Connect configured models and shared Exa retrieval for live discovery."""
-    validate_url(url)
+    host = urlsplit(url).hostname
+    if host not in settings.allowed_hosts:
+        raise CrawlError("blocked", "Municipality host is not in config.yaml allowed_hosts.")
+    url = validate_url(url, host)
     async with (
         ExaRetriever(
-            settings.crawl, settings.exa, search_enabled=settings.web_search_enabled
+            settings.crawl,
+            settings.exa,
+            search_enabled=settings.web_search_enabled,
+            allowed_host=host,
         ) as crawler,
         live_agents(settings, progress) as agents,
     ):

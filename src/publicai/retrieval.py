@@ -60,9 +60,9 @@ class _Response(BaseModel):
     output: None = None
 
 
-def _page_url(url: str) -> str:
+def _page_url(url: str, allowed_host: str) -> str:
     """Accept only municipal HTML-page candidates, never document or JSON retrieval."""
-    url = validate_url(url)
+    url = validate_url(url, allowed_host)
     if unquote(urlsplit(url).path).lower().endswith((".pdf", ".ics", ".xml", ".json", ".zip")):
         raise CrawlError("blocked", "Exa retrieval is restricted to municipal HTML pages")
     return url
@@ -99,11 +99,13 @@ class ExaRetriever:
         search_enabled: bool = True,
         api_key: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        allowed_host: str = ALLOWED_HOST,
     ) -> None:
         key = api_key or os.getenv("EXA_API_KEY")
         if not key or not key.strip() or key.startswith("your_"):
             raise ExaConfigurationError("EXA_API_KEY is missing; configure it in .env.")
         self.settings = settings
+        self.allowed_host = allowed_host
         self.exa = exa
         self.search_enabled = search_enabled
         self.request_count = 0
@@ -125,7 +127,7 @@ class ExaRetriever:
         )
         self._tools = ExaSearch(
             client=self,
-            include_domains=[ALLOWED_HOST],
+            include_domains=[allowed_host],
             num_results=exa.max_results,
             max_text_chars=exa.max_text_chars,
             guidance="",
@@ -190,7 +192,7 @@ class ExaRetriever:
             "/search",
             {
                 "query": query,
-                "includeDomains": [ALLOWED_HOST],
+                "includeDomains": [self.allowed_host],
                 "numResults": self.exa.max_results,
                 "contents": {"highlights": True},
             },
@@ -198,7 +200,7 @@ class ExaRetriever:
         matches = []
         for result in response.results:
             try:
-                result.url = _page_url(result.url)
+                result.url = _page_url(result.url, self.allowed_host)
             except CrawlError:
                 continue
             result.title = (result.title or "")[:1000]
@@ -209,7 +211,7 @@ class ExaRetriever:
 
     async def get_contents(self, urls: str, *, text: dict[str, Any]) -> _Response:
         """Validate requested and returned page URLs, including per-URL API status."""
-        url = _page_url(urls)
+        url = _page_url(urls, self.allowed_host)
         response = await self._post(
             "/contents",
             {
@@ -225,7 +227,11 @@ class ExaRetriever:
         if len(response.results) != 1:
             raise CrawlError("inaccessible", "Exa returned no unique page result")
         result = response.results[0]
-        if _page_url(result.url) != url or not result.text or not result.text.strip():
+        if (
+            _page_url(result.url, self.allowed_host) != url
+            or not result.text
+            or not result.text.strip()
+        ):
             raise CrawlError("inaccessible", "Exa returned an empty or mismatched page")
         result.text = result.text[: self.exa.max_text_chars]
         self._contents[url] = result
@@ -238,7 +244,7 @@ class ExaRetriever:
         except CrawlError as error:
             self.failures.append(
                 CrawlFailure(
-                    url=f"https://{ALLOWED_HOST}/",
+                    url=f"https://{self.allowed_host}/",
                     reason=error.reason,
                     detail="Exa search failed; query and provider payload omitted",
                 )
@@ -248,7 +254,7 @@ class ExaRetriever:
     async def fetch(self, url: str) -> FetchedPage:
         """Use Pydantic AI's get_page tool and retain its validated Exa extraction."""
         try:
-            url = _page_url(url)
+            url = _page_url(url, self.allowed_host)
             if url in self._pages:
                 return self._pages[url]
             await _invoke(self._tools.get_page, url)
@@ -273,7 +279,7 @@ class ExaRetriever:
             return page
         except CrawlError as error:
             try:
-                safe_url = validate_url(url)
+                safe_url = validate_url(url, self.allowed_host)
             except CrawlError:
                 safe_url = "<blocked-url>"
             self.failures.append(CrawlFailure(url=safe_url, reason=error.reason, detail=str(error)))
@@ -290,7 +296,7 @@ class ExaRetriever:
         ]
         if not contacts and self.search_enabled:
             try:
-                results = await self.web_search("Gemeinde Ausserberg Kontakt Impressum")
+                results = await self.web_search(f"{self.allowed_host} Gemeinde Kontakt Impressum")
                 contacts = [source["url"] for source in results.metadata["sources"]]
             except CrawlError:
                 contacts = []

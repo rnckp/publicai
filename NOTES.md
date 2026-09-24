@@ -41,10 +41,11 @@
   `instructions`. Both agents share explicit field guidance in the catalogue;
   labels alone must not be treated as structured disposal guidance. Review
   rejections use trusted error messages; arbitrary SDK exception text stays hidden.
-- The authorized website hostname is exactly `www.ausserberg.ch`. External
-  portal URLs can be retained as handoffs but are never fetched. The OpenAI API
-  connection is separate from website retrieval. `config.yaml` does not widen
-  the website boundary.
+- Live discovery accepts only hosts in `config.yaml`'s `allowed_hosts`; each run
+  binds Exa search, returned-page validation, and fetches to the selected host.
+  Retained source URLs must match the discovery's official host. External portal
+  URLs can be retained as handoffs but are never fetched. Model API connections
+  are separate from website retrieval.
 - Search citations cannot substitute for retained sources. Both model modes now
   use Exa; search and contents calls share the configured acquisition budget.
 - The two Pydantic AI agents perform discovery and evidence review. Package
