@@ -45,8 +45,7 @@ def configure(settings: TelemetrySettings) -> None:
         "httpcore2",
         "openai",
         "pydantic_ai",
-        "ddgs",
-        "primp",
+        "exa_py",
     ):
         logging.getLogger(name).setLevel(logging.CRITICAL)
     if settings.enabled:

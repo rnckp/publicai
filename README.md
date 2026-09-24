@@ -2,8 +2,9 @@
 
 A CLI-first factory that turns municipal HTML into an evidence-backed, read-only
 MCP server. Discovery is currently restricted to **`www.ausserberg.ch`**. The
-restriction is enforced in code, including DNS resolution and redirects; it
-cannot be widened by a prompt, URL parameter or configuration file.
+restriction is enforced on Exa requests and returned page URLs; it cannot be
+widened by a prompt or configuration file. Exa performs remote crawling, so its
+DNS, robots, and intermediate redirect handling are outside this application.
 
 ## Run
 
@@ -14,7 +15,7 @@ uv sync
 cp .env.example .env  # only when .env does not already exist
 ```
 
-Set `OPENAI_API_KEY` in `.env`. Both Pydantic AI agents use the OpenAI API directly:
+Set `OPENAI_API_KEY` and `EXA_API_KEY` in `.env`. Both Pydantic AI agents use the OpenAI API directly:
 `gpt-6-sol` for discovery and `gpt-6-luna` for evidence review, with low reasoning
 effort. Model IDs and reasoning effort are configurable in `config.yaml`. Discovery
 uses Sol because live Luna runs failed the schema and evidence checks.
@@ -44,13 +45,20 @@ Use `--model MODEL` to override both steps. A step-specific option takes precede
 over `--model`; otherwise, the configured value is used. Use `--config PATH` to load
 another configuration file. The `build` step is deterministic and uses no model.
 
-Model API traffic uses the fixed endpoint for the selected provider, separately
-from website retrieval. In OpenAI mode, discovery uses Pydantic AI's native `WebSearch` capability
-with indexed results filtered to `www.ausserberg.ch`. Set `web_search_enabled: false`
-in `config.yaml` to disable it (the default when no configuration file is loaded).
-Search can incur provider tool charges; hosted searches are separate from the
-crawler request budget. Neither agent gets a browser, shell, filesystem access,
-form submission or external URL fetching. No secrets are passed to their prompts or tools.
+Both model modes use Pydantic AI's Exa search and page-retrieval tools, backed by
+`EXA_API_KEY`. `web_search` returns scoped highlights; `web_fetch` calls Exa's
+`get_page` tool and retains validated extracted text with evidence IDs. Initial
+homepage/contact retrieval also uses Exa. Search highlights alone cannot be cited.
+Set `web_search_enabled: false` to disable search; page retrieval still needs Exa.
+Neither agent gets a browser, shell, filesystem, form submission, or external-portal
+fetching. Credentials are never included in prompts or tool results.
+
+Shared `exa:` settings in `config.yaml` control results (5), page text (10,000
+characters), search calls (8), timeout (20 seconds), and request spacing (1 second).
+`crawl.max_requests`, `crawl.run_timeout`, and `crawl.max_bytes` bound all Exa
+requests, elapsed acquisition time, and API response bytes. The legacy
+`website_requests` metric counts Exa requests, including searches and failed calls.
+Exa's search and contents APIs may incur charges independently of the model API.
 
 Each run writes a new directory; existing discoveries and packages are never
 overwritten. Failed discovery/review/build attempts produce diagnostic artifacts
@@ -89,34 +97,20 @@ provider's 5/s limit. Run one CLI process at a time with this key; separate proc
 and other applications do not share this limiter. SDK retries respect `Retry-After`.
 The guide lists a 60-minute bearer-token lifetime; replace expired credentials in `.env`.
 
-Apertus uses Pydantic AI's built-in DuckDuckGo search callable through a locally
-executed `WebSearch` capability; Swisscom supplies model inference only. Queries
-contact DuckDuckGo, and results are filtered to `www.ausserberg.ch`. The wrapper
-pins the DuckDuckGo backend, limits results and keeps snippets separate from
-retained evidence. `web_fetch` still runs through the restricted local crawler.
-No search API key is needed. Set `web_search_enabled: false` to disable search in
-either mode; `list_sources` and `web_fetch` remain available.
-
-The `apertus.search_*` settings control results (default 5), searches per run
-(default 8, including failures), timeout (10 seconds), and minimum search interval
-(1 second). These limits are separate from Swisscom model requests. If search is
-unavailable or rate-limited, discovery continues with known navigation and reports
-the gap. The same evidence checks and review gates apply; OpenAI strict output
-schema mode is not requested for Apertus.
+Apertus and OpenAI use the same Exa tools and evidence checks. No DuckDuckGo or
+OpenAI-hosted search is used. Swisscom model pacing remains separate from Exa
+request pacing. OpenAI strict output-schema mode is not requested for Apertus.
 Offline tests verify the integration; model quality must be assessed from real runs
 and their `metrics.json`, `discovery-report.json`, and failure diagnostics.
 
 ## The two agents and their boundaries
 
-1. **Discovery agent** inspects public municipal HTML or explicitly linked
-   public JSON through Pydantic AI's `WebFetch` capability (`web_fetch`) and searches
-   known navigation using `list_sources`. Because OpenAI Responses has no native
-   WebFetch support in the installed SDK, this capability uses the restricted
-   crawler as its local implementation. `WebSearch` uses OpenAI hosted search or
-   local DuckDuckGo search in Apertus mode to find additional page candidates; snippets cannot become evidence until a page is fetched and retained.
-   It returns a
-   typed inventory with literal excerpts for every fact. Trusted acquisition code
-   owns source IDs, hashes, timestamps and website permissions.
+1. **Discovery agent** searches Exa for municipal pages and retrieves their
+   extracted text using `web_fetch`. Search is domain-filtered, and requested and
+   returned page URLs are validated locally. `list_sources` lists retained sources
+   and links from Exa's extracted text/link metadata. The agent returns a typed
+   inventory with literal excerpts. Trusted code owns source IDs, hashes, retrieval
+   timestamps, request limits, and publication permissions.
 2. **Evidence-review agent** checks every claim and municipality identity. Its
    only tool, `read_source`, reads retained text by source ID. Missing checks,
    unsupported claims, conflicts in definitive answers or identity disagreement
@@ -128,21 +122,19 @@ no outbound requests. Both agents' instructions live in `src/publicai/prompts/`.
 The small tool sets are loaded eagerly because they are needed throughout each
 agent's task; there is no general tool discovery or sub-agent spawning.
 
-The crawler allows GET only, respects robots rules and pins public IP addresses
-at connection time. Defaults are 100 requests including robots/sitemaps and
-redirects, two concurrent requests, a ten-minute run, ten-second requests, five
-redirects and 5 MiB response bodies. Cookies, credentials, proxies from the
-environment, query strings, non-default ports and private-network destinations
-are blocked for fetching. Observed public download-query links are retained only
-as handoffs. PDF/iCalendar titles and links are retained as uninspected document
-metadata; external portals also remain handoffs. JavaScript
-execution, PDF/calendar parsing and form submission are outside this MVP. Public
-JSON must be explicitly linked from inspected municipal HTML on the permitted host;
-its size, nesting and values are bounded, and links within JSON are never auto-followed.
-Observed form labels, required markers and authentication interfaces are retained
-as acquisition metadata. They are never treated as complete procedural requirements.
-HTML nesting is limited to 128 elements. Empty or excessively nested optional pages
-become recorded acquisition gaps; identity and useful-evidence checks still apply.
+The live factory uses Exa for retrieval, including the homepage and up to two
+contact pages. It retains Exa's extracted text (which may come from Exa's cache),
+not independently verified raw HTML. Retrieval timestamps record when this app
+received the extraction. Per-page text may be truncated; absent text does not prove
+that guidance is absent. Exa extraction does not provide verified form-required
+markers or authentication observations, and the agent must not infer them.
+PDF/calendar and external destinations remain uninspected handoffs. Direct JSON,
+document parsing, JavaScript interaction, and form submission are outside this
+retrieval mode. Query-bearing URLs, credentials, non-default ports, and other hosts
+are rejected before Exa is called. Returned page URLs and per-URL statuses are
+checked before evidence is retained. Existing direct-crawler code and its security
+tests remain available, but live CLI discovery does not use that crawler.
+
 Published email and telephone link destinations remain citable even when their
 visible labels contain no address or number.
 

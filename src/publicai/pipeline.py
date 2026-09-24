@@ -36,6 +36,7 @@ from publicai.contracts import (
     normalize_whitespace,
 )
 from publicai.crawler import SafeCrawler, validate_url
+from publicai.retrieval import ExaRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ async def discover_with_agents(
     out: Path,
     settings: Settings,
     agents: FactoryAgents,
-    crawler: SafeCrawler,
+    crawler: ExaRetriever | SafeCrawler,
     progress: Callable[[str], None] = lambda _: None,
 ) -> Path:
     """Run injected agents and crawler; publish only a validated reviewed discovery.
@@ -157,7 +158,7 @@ async def discover_with_agents(
         url = validate_url(url)
         context.official_url = url
         async with asyncio.timeout(settings.run_timeout):
-            progress("Inspecting homepage, robots rules, sitemap and contact pages")
+            progress("Retrieving homepage and contact-page evidence")
             pages = await crawler.seed(url)
             for page in pages:
                 context.retain(page)
@@ -303,7 +304,12 @@ async def discover_with_agents(
 async def discover(
     url: str, out: Path, settings: Settings, progress: Callable[[str], None] = lambda _: None
 ) -> Path:
-    """Connect configured models and the restricted crawler for a live discovery."""
+    """Connect configured models and shared Exa retrieval for live discovery."""
     validate_url(url)
-    async with live_agents(settings) as agents, SafeCrawler(settings.crawl) as crawler:
+    async with (
+        ExaRetriever(
+            settings.crawl, settings.exa, search_enabled=settings.web_search_enabled
+        ) as crawler,
+        live_agents(settings) as agents,
+    ):
         return await discover_with_agents(url, out, settings, agents, crawler, progress)

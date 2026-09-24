@@ -46,10 +46,17 @@ class ApertusSettings(ModelSettings):
     discovery_model: str = "swiss-ai/Apertus-v1.5-70B"
     review_model: str = "swiss-ai/Apertus-v1.5-70B"
     requests_per_second: float = Field(default=2, gt=0, le=4)
-    search_max_results: int = Field(default=5, ge=1, le=10)
+
+
+class ExaSettings(BaseModel):
+    """Shared retrieval budgets for every model mode."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    max_results: int = Field(default=5, ge=1, le=10)
+    max_text_chars: int = Field(default=10000, ge=500, le=10000)
     search_request_limit: int = Field(default=8, ge=1, le=24)
-    search_timeout: int = Field(default=10, ge=1, le=30)
-    search_interval: float = Field(default=1, ge=1, le=60)
+    timeout: float = Field(default=20, gt=0, le=60)
+    request_interval: float = Field(default=1, ge=0.01, le=60)
 
 
 class TelemetrySettings(BaseModel):
@@ -69,6 +76,7 @@ class Settings(BaseModel):
     apertus: ApertusSettings = Field(default_factory=ApertusSettings)
     model: OpenAISettings = Field(default_factory=OpenAISettings)
     web_search_enabled: bool = False
+    exa: ExaSettings = Field(default_factory=ExaSettings)
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
     crawl: CrawlSettings = Field(default_factory=CrawlSettings)
     run_timeout: float = Field(default=600, gt=0, le=600)

@@ -18,7 +18,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.native_tools import WebSearchTool
 
 from publicai.agents import DiscoveryContext, Inventory, claim_records, create_agents
 from publicai.config import Settings
@@ -96,14 +95,9 @@ async def test_search_is_optional_scoped_and_discovery_only(enabled: bool, mode:
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         params = info.model_request_parameters
         assert {tool.name for tool in params.function_tools} == (
-            {"web_fetch", "list_sources"}
-            | ({"web_search"} if enabled and mode == "apertus" else set())
+            {"web_fetch", "list_sources"} | ({"web_search"} if enabled else set())
         )
-        assert params.native_tools == (
-            [WebSearchTool(allowed_domains=["www.ausserberg.ch"], external_web_access=False)]
-            if enabled and mode == "openai"
-            else []
-        )
+        assert params.native_tools == []
         return ModelResponse(
             parts=[
                 ToolCallPart(

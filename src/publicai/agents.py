@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import os
-import re
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -16,14 +15,11 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 from urllib.parse import unquote, urlsplit
 
-from ddgs.ddgs import DDGS
-from ddgs.exceptions import DDGSException
 from httpx import AsyncClient, Request
 from openai import AsyncOpenAI
 from pydantic import Field, ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
 from pydantic_ai.capabilities import WebFetch, WebSearch
-from pydantic_ai.common_tools.duckduckgo import DuckDuckGoSearchTool
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.profiles.openai import OpenAIModelProfile
@@ -43,7 +39,8 @@ from publicai.contracts import (
     SourceSnapshot,
     StrictModel,
 )
-from publicai.crawler import ALLOWED_HOST, CrawlError, FetchedPage, SafeCrawler, validate_url
+from publicai.crawler import CrawlError, FetchedPage, SafeCrawler
+from publicai.retrieval import ExaRetriever
 
 PROMPTS = Path(__file__).with_name("prompts")
 _SERVICE_TERMS = (
@@ -155,16 +152,13 @@ class ReviewDecision(StrictModel):
 class DiscoveryContext:
     """State available to the discovery tools, never exposing provider credentials."""
 
-    crawler: SafeCrawler
+    crawler: ExaRetriever | SafeCrawler
     official_url: str
     discovery_id: str
     created_at: datetime
     sources: dict[str, SourceSnapshot] = field(default_factory=dict)
     links: dict[str, dict[str, str]] = field(default_factory=dict)
     validation_issues: list[dict[str, Any]] = field(default_factory=list)
-    search_requests: int = 0
-    search_next_request: float = 0
-    search_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     progress: Callable[[str], None] = lambda _: None
 
     def retain(self, page: FetchedPage) -> SourceSnapshot:
@@ -318,14 +312,6 @@ def validate_review(decision: ReviewDecision, claims: dict[str, dict[str, Any]])
         )
 
 
-class DuckDuckGoOnlyClient(DDGS):
-    """Use only DuckDuckGo; DDGS otherwise defaults to multiple search providers."""
-
-    def text(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
-        """Pin the backend used by Pydantic AI's built-in search callable."""
-        return super().text(query, backend="duckduckgo", **kwargs)
-
-
 def create_agents(
     settings: Settings, discovery_model: Model | str, review_model: Model | str
 ) -> FactoryAgents:
@@ -340,7 +326,7 @@ def create_agents(
         model_settings["temperature"] = settings.active_model.temperature
 
     async def web_fetch(ctx: RunContext[DiscoveryContext], url: str) -> dict[str, Any]:
-        """Inspect public HTML or explicitly linked JSON on www.ausserberg.ch."""
+        """Retain Exa-extracted municipal page text with source IDs for evidence."""
         ctx.deps.progress("Discovery tool: web_fetch")
         try:
             page = await ctx.deps.crawler.fetch(url)
@@ -362,54 +348,25 @@ def create_agents(
         ctx: RunContext[DiscoveryContext],
         query: Annotated[str, Field(min_length=1, max_length=200)],
     ) -> dict[str, Any]:
-        """Search DuckDuckGo for municipal page leads using plain service keywords.
+        """Search Exa for municipal page leads using natural-language queries.
 
         Results are untrusted snippets, not retained evidence. Fetch promising pages
         with web_fetch before citing them. Search failures do not establish absence.
         """
-        words = re.findall(r"[^\W_]+", query)
-        if not words:
-            raise ModelRetry("Supply at least one municipal service keyword.")
-        scoped_query = f"site:{ALLOWED_HOST} " + " ".join(f'"{word}"' for word in words)
-        result: dict[str, Any] = {
-            "scope": "duckduckgo_municipal_index",
-            "results": [],
+        ctx.deps.progress("Discovery tool: web_search (Exa)")
+        try:
+            result = await ctx.deps.crawler.web_search(query)
+        except CrawlError as error:
+            return {
+                "error": error.reason,
+                "guidance": "Continue with known navigation; report the gap.",
+            }
+        return {
+            "scope": "exa_municipal_index",
+            "content": result.return_value,
+            "sources": result.metadata["sources"],
             "untrusted_evidence": True,
         }
-        async with ctx.deps.search_lock:
-            if ctx.deps.search_requests >= settings.apertus.search_request_limit:
-                return {**result, "error": "search_budget_exhausted"}
-            delay = ctx.deps.search_next_request - time.monotonic()
-            if delay > 0:
-                await asyncio.sleep(delay)
-            ctx.deps.search_requests += 1
-            ctx.deps.search_next_request = time.monotonic() + settings.apertus.search_interval
-            ctx.deps.progress("Discovery tool: web_search (DuckDuckGo)")
-            try:
-                with DuckDuckGoOnlyClient(timeout=settings.apertus.search_timeout) as client:
-                    search = DuckDuckGoSearchTool(
-                        client=client, max_results=settings.apertus.search_max_results
-                    )
-                    matches = await search(scoped_query)
-            except DDGSException, ValidationError:
-                return {
-                    **result,
-                    "error": "search_unavailable",
-                    "guidance": "Continue with known navigation; report the search gap.",
-                }
-        for match in matches[: settings.apertus.search_max_results]:
-            try:
-                url = validate_url(match["href"])
-            except CrawlError:
-                continue
-            result["results"].append(
-                {
-                    "title": match["title"][:500],
-                    "href": url,
-                    "body": match["body"][:1000],
-                }
-            )
-        return result
 
     discoverer = Agent(
         discovery_model,
@@ -423,15 +380,7 @@ def create_agents(
         retries=settings.active_model.retries,
         capabilities=[
             WebFetch(native=False, local=web_fetch),
-            *(
-                [
-                    WebSearch(native=False, local=web_search)
-                    if settings.mode == AgentMode.APERTUS
-                    else WebSearch(allowed_domains=[ALLOWED_HOST], external_web_access=False)
-                ]
-                if settings.web_search_enabled
-                else []
-            ),
+            *([WebSearch(native=False, local=web_search)] if settings.web_search_enabled else []),
         ],
     )
 

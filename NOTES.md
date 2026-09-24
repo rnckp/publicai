@@ -17,11 +17,8 @@
   portal URLs can be retained as handoffs but are never fetched. The OpenAI API
   connection is separate from website retrieval. `config.yaml` does not widen
   the website boundary.
-- Discovery uses Pydantic AI `WebSearch` with OpenAI indexed-only search and a
-  municipal domain filter, enabled by the checked-in config. `WebFetch` uses
-  the existing crawler via its custom local implementation: the installed SDK
-  does not support native WebFetch on OpenAI Responses. Search citations cannot
-  substitute for retained sources. Hosted searches are outside the crawler budget.
+- Search citations cannot substitute for retained sources. Both model modes now
+  use Exa; search and contents calls share the configured acquisition budget.
 - The two Pydantic AI agents perform discovery and evidence review. Package
   generation is deterministic; there is no code-generating builder agent.
   Current defaults use `gpt-6-sol` for discovery and `gpt-6-luna` for review.
@@ -42,9 +39,11 @@
   MCP and lists the six tools on the running loopback HTTP server; its port must
   match the server's port.
 - The locked MCP 2.x SDK uses `MCPServer` as its high-level Python server.
-- Apertus search uses Pydantic AI's built-in DuckDuckGo callable through a local
-  `WebSearch` capability. In the installed SDK, `allowed_domains` and
-  `external_web_access=False` require native provider support, so municipal query
-  scoping and result URL validation belong in the local wrapper. DDGS defaults
-  to multiple backends; explicitly select `duckduckgo` to keep provider access
-  predictable. Search budgets/pacing are separate from Swisscom model requests.
+
+- Live discovery now uses shared Exa retrieval for both model modes, including
+  homepage/contact seeding. Pydantic AI's ExaSearch toolset formats search/get_page;
+  a bounded HTTP client adapter validates results before formatting or retention.
+  The public get_page operation is exposed as web_fetch to retain source IDs.
+  Exa owns DNS, robots, redirects and extraction; local direct-crawler guarantees
+  do not apply remotely. Text may be cached/truncated, and raw form/authentication
+  observations are unavailable. Existing website_requests metrics count Exa API calls.

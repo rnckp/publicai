@@ -1,8 +1,14 @@
 # Model API connections are separate from website retrieval permissions.
-# Website tools are hard restricted to www.ausserberg.ch in crawler.py.
-# Search uses OpenAI hosted search or local DuckDuckGo; evidence uses the restricted crawler.
+# Exa requests and returned page URLs are restricted to www.ausserberg.ch.
+# Both search and fetch use Exa for every model mode.
 mode: openai  # openai or apertus; CLI --mode overrides this.
-web_search_enabled: true  # OpenAI hosted search or Apertus DuckDuckGo search.
+web_search_enabled: true  # Exa search; Exa page retrieval remains enabled when false.
+exa:
+  max_results: 5
+  max_text_chars: 10000
+  search_request_limit: 8
+  timeout: 20
+  request_interval: 1
 model:
   provider: openai
   discovery_model: gpt-6-sol
@@ -25,20 +31,16 @@ apertus:
   timeout: 120
   retries: 2
   requests_per_second: 2  # Includes retries; must be <= 4 (provider limit: 5).
-  search_max_results: 5
-  search_request_limit: 8
-  search_timeout: 10
-  search_interval: 1  # Minimum seconds between DuckDuckGo searches; independent of Swisscom.
   request_limit: 24
   tool_calls_limit: 80
   total_tokens_limit: 250000
 run_timeout: 600
 crawl:
   max_requests: 100
-  concurrency: 2
+  concurrency: 2  # Legacy direct-crawler setting; Exa requests are serialized.
   run_timeout: 600
-  request_timeout: 10
-  max_redirects: 5
+  request_timeout: 10  # Legacy direct crawler; Exa uses exa.timeout.
+  max_redirects: 5  # Legacy direct crawler; Exa controls remote redirects.
   max_bytes: 5242880
 telemetry:
   enabled: false

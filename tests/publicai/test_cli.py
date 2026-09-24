@@ -53,7 +53,7 @@ def test_normal_run_creates_discovery_and_tested_package(
         yield agents
 
     class OfflineCrawler(RetainedCrawler):
-        def __init__(self, settings: object) -> None:
+        def __init__(self, settings: object, exa: object, **kwargs: object) -> None:
             super().__init__(retained.sources)
 
         async def __aenter__(self) -> Self:
@@ -63,7 +63,7 @@ def test_normal_run_creates_discovery_and_tested_package(
             return None
 
     monkeypatch.setattr("publicai.pipeline.live_agents", model_boundary)
-    monkeypatch.setattr("publicai.pipeline.SafeCrawler", OfflineCrawler)
+    monkeypatch.setattr("publicai.pipeline.ExaRetriever", OfflineCrawler)
     result = CliRunner().invoke(app, ["run", "https://www.ausserberg.ch/", "--out", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "Discovery:" in result.output and "Package:" in result.output

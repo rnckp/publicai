@@ -66,12 +66,13 @@ def _failure(error: Exception) -> None:
     from publicai.builder import BuildError
     from publicai.crawler import CrawlError
     from publicai.pipeline import DiscoveryError
+    from publicai.retrieval import ExaConfigurationError
 
     if isinstance(error, (BuildError, DiscoveryError)):
         if isinstance(error, DiscoveryError):
             console.print(str(error), style="red", markup=False)
         console.print(f"Failed. Diagnostic: {error.diagnostic_path}", style="red", markup=False)
-    elif isinstance(error, (ModelConfigurationError, CrawlError)):
+    elif isinstance(error, (ModelConfigurationError, ExaConfigurationError, CrawlError)):
         console.print(str(error), style="red", markup=False)
     else:
         # Do not print SDK/config exception payloads, which can contain credentials.

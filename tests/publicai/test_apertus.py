@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from ddgs.ddgs import DDGS
 from pydantic_ai import models
+from pydantic_ai.messages import ToolReturn
 from test_pipeline import RetainedCrawler
 
 from publicai.agents import (
@@ -68,7 +68,7 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
             arguments = {"query": "Kontakt"} if discovery else {"source_id": "source-1"}
         elif discovery and len([m for m in body["messages"] if m["role"] == "tool"]) == 1:
             searched = json.loads(body["messages"][-1]["content"])
-            assert searched["scope"] == "duckduckgo_municipal_index"
+            assert searched["scope"] == "exa_municipal_index"
             name = "web_fetch"
             arguments = {"url": fixture["sources"][0]["url"]}
         else:
@@ -124,7 +124,6 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
         clients.append(client)
         return client
 
-    monkeypatch.setattr(DDGS, "text", lambda self, query, **kwargs: [])
     monkeypatch.setenv("SWISSCOM_KEY", "test-swisscom-key")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
@@ -140,6 +139,10 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
         fetched_urls.append(url)
         return (await crawler.seed(fixture["official_url"]))[0]
 
+    async def web_search(query: str) -> ToolReturn[str]:
+        return ToolReturn("No leads", metadata={"sources": []})
+
+    crawler.web_search = web_search
     crawler.fetch = fetch
     async with live_agents(settings) as agents:
         path = await discover_with_agents(
