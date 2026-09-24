@@ -12,6 +12,7 @@ from time import monotonic
 from uuid import uuid4
 
 from pydantic_ai import capture_run_messages
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart
 
 from publicai.agents import (
@@ -90,6 +91,26 @@ class DiscoveryError(ValueError):
     def __init__(self, message: str, diagnostic_path: Path) -> None:
         super().__init__(message)
         self.diagnostic_path = diagnostic_path
+
+
+def failure_message(error: Exception) -> str:
+    """Explain known failures without exposing untrusted provider response bodies."""
+    if isinstance(error, ReviewValidationError):
+        return str(error)
+    if isinstance(error, ModelHTTPError):
+        guidance = {
+            401: "Check or renew the selected provider's API credentials.",
+            403: "Check the selected provider's model access permissions.",
+            404: "Check the configured model ID and provider endpoint.",
+            429: "Provider rate limit reached. Wait before retrying; check account/token quotas "
+            "and concurrent clients. Raising requests_per_second will not resolve a quota limit.",
+            503: "Provider temporarily unavailable. Try again later.",
+            504: "Provider gateway timed out. Try again later.",
+        }.get(
+            error.status_code, "Check provider availability and the selected model configuration."
+        )
+        return f"Model request failed (HTTP {error.status_code}). {guidance}"
+    return "Discovery failed validation, acquisition, model execution, or review."
 
 
 def minimize_sources(discovery: Discovery) -> Discovery:
@@ -270,9 +291,10 @@ async def discover_with_agents(
             "discovery_id": discovery_id,
             "error_type": type(error).__name__,
             "stage": stage,
-            "message": str(error)
-            if isinstance(error, ReviewValidationError)
-            else "Discovery failed validation, acquisition, model execution, or review.",
+            "message": failure_message(error),
+            "provider": settings.active_model.provider,
+            "http_status": error.status_code if isinstance(error, ModelHTTPError) else None,
+            "duration_seconds": round(monotonic() - started, 3),
             "request_count": crawler.request_count,
             "failures": [failure.model_dump() for failure in crawler.failures],
             "validation_issues": context.validation_issues,
@@ -337,6 +359,6 @@ async def discover(
         ExaRetriever(
             settings.crawl, settings.exa, search_enabled=settings.web_search_enabled
         ) as crawler,
-        live_agents(settings) as agents,
+        live_agents(settings, progress) as agents,
     ):
         return await discover_with_agents(url, out, settings, agents, crawler, progress)

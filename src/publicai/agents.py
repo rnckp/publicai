@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 from urllib.parse import unquote, urlsplit
 
-from httpx import AsyncClient, Request
+from httpx import AsyncClient, Request, Response
 from openai import AsyncOpenAI
 from pydantic import Field, ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
@@ -460,7 +460,9 @@ def usage_limits(settings: Settings) -> UsageLimits:
 
 
 @asynccontextmanager
-async def live_agents(settings: Settings) -> AsyncIterator[FactoryAgents]:
+async def live_agents(
+    settings: Settings, progress: Callable[[str], None] = lambda _: None
+) -> AsyncIterator[FactoryAgents]:
     """Create and close SDK clients, pacing every Swisscom attempt including retries."""
     apertus = settings.mode == AgentMode.APERTUS
     key_name = "SWISSCOM_KEY" if apertus else "OPENAI_API_KEY"
@@ -471,6 +473,24 @@ async def live_agents(settings: Settings) -> AsyncIterator[FactoryAgents]:
         )
     lock = asyncio.Lock()
     next_request = 0.0
+
+    async def report_response(response: Response) -> None:
+        """Make provider errors and SDK backoff visible without logging payloads."""
+        if response.status_code < 400:
+            return
+        retry_count = int(response.request.headers.get("x-stainless-retry-count", "0"))
+        retry_hint = response.headers.get("x-should-retry")
+        retryable = retry_hint == "true" or (
+            retry_hint != "false"
+            and (response.status_code in {408, 409, 429} or response.status_code >= 500)
+        )
+        message = f"Swisscom returned HTTP {response.status_code}"
+        if retryable and retry_count < settings.apertus.http_retries:
+            message += (
+                f"; SDK retry {retry_count + 1}/{settings.apertus.http_retries} "
+                "will respect provider Retry-After/backoff"
+            )
+        progress(message)
 
     async def pace_request(request: Request) -> None:
         """Space HTTP attempts so concurrent calls and SDK retries share one budget."""
@@ -487,11 +507,13 @@ async def live_agents(settings: Settings) -> AsyncIterator[FactoryAgents]:
         if apertus
         else "https://api.openai.com/v1",
         timeout=settings.active_model.timeout,
-        max_retries=settings.active_model.retries,
+        max_retries=settings.apertus.http_retries if apertus else settings.active_model.retries,
         http_client=AsyncClient(
             trust_env=False,
             follow_redirects=False,
-            event_hooks={"request": [pace_request]} if apertus else None,
+            event_hooks={"request": [pace_request], "response": [report_response]}
+            if apertus
+            else None,
         ),
     ) as client:
         adapter = OpenAIProvider(openai_client=client)

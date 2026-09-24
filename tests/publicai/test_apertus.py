@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from pydantic_ai import models
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ToolReturn
 from test_pipeline import RetainedCrawler
 
@@ -38,6 +39,7 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
     attempts = []
     tool_names = []
     clients = []
+    progress = []
 
     async def advance(seconds: float) -> None:
         nonlocal now
@@ -130,7 +132,7 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
     monkeypatch.setattr("publicai.agents.AsyncClient", http_client)
     monkeypatch.setattr("publicai.agents.time", SimpleNamespace(monotonic=lambda: now))
     monkeypatch.setattr("publicai.agents.asyncio.sleep", advance)
-    settings = Settings(mode="apertus", web_search_enabled=True)
+    settings = Settings(mode="apertus", web_search_enabled=True, apertus={"http_retries": 2})
     crawler = RetainedCrawler(fixture["sources"])
     crawler.settings = settings.crawl
     fetched_urls = []
@@ -144,7 +146,7 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
 
     crawler.web_search = web_search
     crawler.fetch = fetch
-    async with live_agents(settings) as agents:
+    async with live_agents(settings, progress.append) as agents:
         path = await discover_with_agents(
             "https://www.ausserberg.ch/",
             tmp_path,
@@ -164,6 +166,7 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
     assert fetched_urls == [fixture["sources"][0]["url"]]
     assert all(later - earlier >= 0.5 for earlier, later in pairwise(attempts))
     assert all(client.is_closed for client in clients)
+    assert any("HTTP 429" in message and "retry 1/2" in message for message in progress)
 
 
 async def test_missing_swisscom_key_does_not_fall_back_to_openai(
@@ -181,3 +184,30 @@ def test_apertus_uses_its_own_usage_limits() -> None:
     limits = usage_limits(settings)
     assert limits.request_limit == 3
     assert limits.tool_calls_limit == 6
+
+
+async def test_apertus_http_retries_can_be_disabled_independently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        attempts.append(request)
+        body = json.loads(request.content)
+        assert body["max_completion_tokens"] == 8192
+        return httpx.Response(429, json={"error": "limited"})
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "publicai.agents.AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs),
+    )
+    monkeypatch.setenv("SWISSCOM_KEY", "test-swisscom-key")
+    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
+    settings = Settings(mode="apertus", apertus={"http_retries": 0})
+    assert settings.apertus.retries == 2
+    async with live_agents(settings) as agents:
+        with pytest.raises(ModelHTTPError) as error:
+            await agents.reviewer.run("Synthetic rate-limit test", deps={})
+    assert error.value.status_code == 429
+    assert len(attempts) == 1

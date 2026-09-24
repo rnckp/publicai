@@ -7,6 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 from pydantic_ai import models
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
@@ -193,6 +194,30 @@ async def test_provider_error_payload_is_not_exposed(tmp_path: Path) -> None:
     report = json.loads((error.value.diagnostic_path.parent / "discovery-report.json").read_text())
     assert report["stop_reason"] == "review_failed"
     assert report["publication_status"] == "failed"
+    assert not list(tmp_path.glob("discovery-*"))
+
+
+@pytest.mark.parametrize("status", [401, 429, 503, 504])
+async def test_model_http_failure_reports_safe_actionable_diagnostics(
+    tmp_path: Path, status: int
+) -> None:
+    settings = Settings(mode="apertus")
+    agents, crawler = fixture_agents(settings)
+
+    def fail(messages: object, info: object) -> ModelResponse:
+        raise ModelHTTPError(status, "private-model", {"error": "private-provider-payload"})
+
+    with agents.discoverer.override(model=FunctionModel(fail)):
+        with pytest.raises(DiscoveryError) as error:
+            await discover_with_agents(
+                "https://www.ausserberg.ch/", tmp_path, settings, agents, crawler
+            )
+    diagnostic = json.loads(error.value.diagnostic_path.read_text())
+    assert diagnostic["http_status"] == status
+    assert diagnostic["duration_seconds"] >= 0
+    assert diagnostic["provider"] == "swisscom"
+    assert f"HTTP {status}" in str(error.value)
+    assert "private-" not in error.value.diagnostic_path.read_text()
     assert not list(tmp_path.glob("discovery-*"))
 
 

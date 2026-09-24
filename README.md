@@ -106,11 +106,20 @@ As a shorthand, `--model apertus` selects the Apertus profile with its configure
 model IDs, just like `--mode apertus`; it cannot be combined with `--mode openai`.
 Use `--mode openai` to switch back.
 
-Requests are spaced at **2 per second**, including SDK retries, shared by both
-agents in a run. `apertus.requests_per_second` accepts values up to 4, below the
+Requests are paced by `apertus.requests_per_second`, including SDK retries,
+shared by both agents in a run. It accepts values up to 4, below the
 provider's 5/s limit. Run one CLI process at a time with this key; separate processes
 and other applications do not share this limiter. SDK retries respect `Retry-After`.
 The guide lists a 60-minute bearer-token lifetime; replace expired credentials in `.env`.
+
+Apertus defaults to an **8,192-token output allowance**. A larger allowance can
+contribute to provider token-rate limits even when few requests are sent. HTTP 429
+means provider rate limiting; raising requests per second does not resolve it.
+`apertus.http_retries` defaults to `1` to allow recovery from transient errors;
+set it to `0` to fail immediately. Provider HTTP errors and retry attempts appear
+in progress output. SDK backoff can include long `Retry-After` waits.
+`apertus.retries` independently controls agent validation retries. Failed runs
+record provider, HTTP status and elapsed time without saving provider payloads.
 
 Apertus and OpenAI use the same Exa tools and evidence checks. No DuckDuckGo or
 OpenAI-hosted search is used. Swisscom model pacing remains separate from Exa

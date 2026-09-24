@@ -1,5 +1,10 @@
 # Deferred work and validation
 
+- Repeat the Apertus end-to-end run when Swisscom quota permits. The September
+  2026 verification hit HTTP 429 after the first model response and two additional
+  page fetches; lower output allowance and visible bounded retries are implemented,
+  but successful live discovery/review/packaging is not yet established.
+
 - Run the ten-case reviewer gold set explicitly with `--run-review-evals` before
   using it to justify model changes. Offline fixture/scoring checks do not measure
   the live reviewer's false-approval or false-rejection rates.

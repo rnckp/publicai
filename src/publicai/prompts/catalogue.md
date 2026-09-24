@@ -13,6 +13,13 @@ Minimum structured coverage for supported:
   label alone, even alongside materials and hours, does not satisfy the
   structured minimum; that inventory remains partial. Review coverage against
   the populated structured fields, not information left only in labels or sources.
+  A named collection point IS a disposal point when stored in locations with
+  evidence identifying it as the destination for those materials. No street
+  address, coordinates or extra disposal instructions are required in that case.
+  For example: materials=[Glas], locations=[Sammelstelle Beispiel] with an excerpt
+  explicitly linking Glas to that point meets the minimum, even if label repeats
+  the same point name. With that name only in label and no locations/instructions,
+  it does not. Do not reject a supported locations field merely because it is a name.
 - move_in: explicit registration guidance AND an official contact or registration
   destination. A page/form title alone is a service handoff, not guidance.
 - move_out: explicit deregistration guidance AND an official contact or

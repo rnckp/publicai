@@ -45,6 +45,8 @@ class ApertusSettings(ModelSettings):
     provider: Literal["swisscom"] = "swisscom"
     discovery_model: str = "swiss-ai/Apertus-v1.5-70B"
     review_model: str = "swiss-ai/Apertus-v1.5-70B"
+    max_tokens: int = Field(default=8192, ge=512, le=64000)
+    http_retries: int = Field(default=1, ge=0, le=3)
     requests_per_second: float = Field(default=2, gt=0, le=4)
 
 

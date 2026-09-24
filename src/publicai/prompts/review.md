@@ -21,3 +21,5 @@ must be retained and disputed facts excluded. Source-language facts are expected
 Return identity_consistent, one check per claim with status supported/unsupported/
 conflicting, and any blocking issues. Approval is computed by trusted code; you
 do not have an approval override. Semantic review is best-effort, not proof.
+Keep output concise: use an empty reason for supported checks; explain unsupported
+or conflicting checks briefly. Do not repeat each accepted fact in prose.

@@ -72,7 +72,7 @@ def test_normal_run_creates_discovery_and_tested_package(
     agents, retained = fixture_agents(Settings())
 
     @asynccontextmanager
-    async def model_boundary(settings: Settings) -> AsyncIterator[FactoryAgents]:
+    async def model_boundary(settings: Settings, progress: object) -> AsyncIterator[FactoryAgents]:
         yield agents
 
     class OfflineCrawler(RetainedCrawler):

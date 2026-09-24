@@ -1,8 +1,8 @@
 # Model API connections are separate from website retrieval permissions.
 # Exa requests and returned page URLs are restricted to www.ausserberg.ch.
 # Both search and fetch use Exa for every model mode.
-mode: openai  # openai or apertus; CLI --mode overrides this.
-web_search_enabled: true  # Exa search; Exa page retrieval remains enabled when false.
+mode: openai # openai or apertus; CLI --mode overrides this.
+web_search_enabled: true # Exa search; Exa page retrieval remains enabled when false.
 exa:
   max_results: 5
   max_text_chars: 10000
@@ -27,20 +27,21 @@ apertus:
   discovery_model: swiss-ai/Apertus-v1.5-70B
   review_model: swiss-ai/Apertus-v1.5-70B
   temperature: null
-  max_tokens: 32000
+  max_tokens: 8192
   timeout: 120
-  retries: 2
-  requests_per_second: 2  # Includes retries; must be <= 4 (provider limit: 5).
+  retries: 2 # Agent validation retries.
+  http_retries: 1 # Visible SDK backoff for transient errors; 0 disables HTTP retries.
+  requests_per_second: 4 # Includes retries; must be <= 4 (provider limit: 5).
   request_limit: 24
   tool_calls_limit: 80
   total_tokens_limit: 250000
 run_timeout: 600
 crawl:
   max_requests: 100
-  concurrency: 2  # Legacy direct-crawler setting; Exa requests are serialized.
+  concurrency: 2 # Legacy direct-crawler setting; Exa requests are serialized.
   run_timeout: 600
-  request_timeout: 10  # Legacy direct crawler; Exa uses exa.timeout.
-  max_redirects: 5  # Legacy direct crawler; Exa controls remote redirects.
+  request_timeout: 10 # Legacy direct crawler; Exa uses exa.timeout.
+  max_redirects: 5 # Legacy direct crawler; Exa controls remote redirects.
   max_bytes: 5242880
 telemetry:
   enabled: false

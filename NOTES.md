@@ -1,5 +1,19 @@
 # Durable implementation notes
 
+- A September 2026 Swisscom discovery-schema probe with fictional evidence and
+  max_tokens=32000 returned HTTP 429; equivalent 512/8192-token probes succeeded
+  in about 11 seconds. This suggests token allowance contributes to admission,
+  but does not establish the provider's exact quota policy. Apertus now defaults
+  to 8192 output tokens and one visible SDK HTTP retry (separate from validation
+  retries), avoiding hidden repeated backoff. Diagnostics retain status/provider/
+  duration, never raw SDK bodies. Account-wide limits can still reject requests.
+  The full live run with HTTP retries disabled passed the first model call and
+  fetched two pages, then hit HTTP 429; end-to-end success remains unverified.
+- A review incorrectly rejected an evidenced named recycling point in locations,
+  while accepting that location claim. The catalogue now explicitly distinguishes
+  a point only in label from one in locations; neither address nor coordinates
+  are mandatory. Review rejection remains blocking, with no automatic approval.
+
 - `--model apertus` selects the Swisscom profile. Previously it sent the literal
   model ID `apertus` to the configured provider (OpenAI by default), failing before
   any model response. Keep this shorthand separate from ordinary model-ID overrides.
