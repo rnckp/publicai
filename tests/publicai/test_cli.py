@@ -88,3 +88,61 @@ def test_build_requires_no_provider_credentials(
     result = CliRunner().invoke(app, ["build", str(fixture), "--out", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert len(list(tmp_path.glob("build-*/manifest.json"))) == 1
+
+
+@pytest.mark.parametrize("command", ["discover", "run"])
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ([], ("configured-discovery", "configured-review")),
+        (["--model", "shared"], ("shared", "shared")),
+        (["--discovery-model", "custom-discovery"], ("custom-discovery", "configured-review")),
+        (["--review-model", "custom-review"], ("configured-discovery", "custom-review")),
+        (
+            ["--model", "shared", "--discovery-model", "specific"],
+            ("specific", "shared"),
+        ),
+        (
+            ["--model", "shared", "--review-model", "specific"],
+            ("shared", "specific"),
+        ),
+        (
+            ["--discovery-model", "first", "--review-model", "second"],
+            ("first", "second"),
+        ),
+    ],
+)
+def test_cli_model_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    options: list[str],
+    expected: tuple[str, str],
+) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "model:\n  discovery_model: configured-discovery\n  review_model: configured-review\n"
+    )
+    selected = []
+
+    async def capture_settings(url: str, out: Path, settings: Settings, progress: object) -> Path:
+        selected.append((settings.model.discovery_model, settings.model.review_model))
+        return Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
+
+    monkeypatch.setattr("publicai.pipeline.discover", capture_settings)
+    monkeypatch.setattr("publicai.builder.build", lambda path, out: path.parent)
+    monkeypatch.setattr("publicai.cli._coverage", lambda path: None)
+    result = CliRunner().invoke(
+        app,
+        [
+            command,
+            "https://www.ausserberg.ch/",
+            "--out",
+            str(tmp_path),
+            "--config",
+            str(config),
+            *options,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert selected == [expected]

@@ -20,12 +20,21 @@ app = typer.Typer(
 console = Console(stderr=True)
 
 
-def _settings(config: Path | None, model: str | None) -> Settings:
+def _settings(
+    config: Path | None,
+    model: str | None,
+    discovery_model: str | None,
+    review_model: str | None,
+) -> Settings:
     load_dotenv()
     settings = load_settings(config)
     if model:
         settings.model.discovery_model = model
         settings.model.review_model = model
+    if discovery_model:
+        settings.model.discovery_model = discovery_model
+    if review_model:
+        settings.model.review_model = review_model
     configure(settings.telemetry)
     return settings
 
@@ -78,12 +87,19 @@ def discover(
     model: Annotated[
         str | None, typer.Option(help="Override both configured agent models.")
     ] = None,
+    discovery_model: Annotated[
+        str | None, typer.Option(help="Discovery model; takes precedence over --model.")
+    ] = None,
+    review_model: Annotated[
+        str | None, typer.Option(help="Evidence-review model; takes precedence over --model.")
+    ] = None,
 ) -> None:
     """Inspect www.ausserberg.ch and retain a reviewed discovery artifact."""
     from publicai.pipeline import discover as discover_pipeline
 
     try:
-        path = asyncio.run(discover_pipeline(url, out, _settings(config, model), _progress))
+        settings = _settings(config, model, discovery_model, review_model)
+        path = asyncio.run(discover_pipeline(url, out, settings, _progress))
         _coverage(path)
         console.print(f"Discovery: {path}", markup=False)
     except Exception as error:
@@ -108,14 +124,23 @@ def run(
     url: str,
     out: Annotated[Path, typer.Option()],
     config: Annotated[Path | None, typer.Option()] = None,
-    model: Annotated[str | None, typer.Option()] = None,
+    model: Annotated[
+        str | None, typer.Option(help="Override both configured agent models.")
+    ] = None,
+    discovery_model: Annotated[
+        str | None, typer.Option(help="Discovery model; takes precedence over --model.")
+    ] = None,
+    review_model: Annotated[
+        str | None, typer.Option(help="Evidence-review model; takes precedence over --model.")
+    ] = None,
 ) -> None:
     """Run discovery, evidence review, deterministic packaging and offline conformance."""
     from publicai.builder import build as build_package
     from publicai.pipeline import discover as discover_pipeline
 
     try:
-        path = asyncio.run(discover_pipeline(url, out, _settings(config, model), _progress))
+        settings = _settings(config, model, discovery_model, review_model)
+        path = asyncio.run(discover_pipeline(url, out, settings, _progress))
         _progress("Building the fixed MCP template and running offline conformance")
         package = build_package(path, out)
         _coverage(package / "discovery.json")

@@ -25,12 +25,24 @@ uv run factory build artifacts/discovery-<id>/discovery.json --out artifacts
 uv run factory run https://www.ausserberg.ch/ --out artifacts
 ```
 
-`publicai` is an alias for the same CLI. To override the configured model for a run:
+`publicai` is an alias for the same CLI. Set each step's default in `config.yaml`:
+
+```yaml
+model:
+  discovery_model: gpt-6-sol
+  review_model: gpt-6-luna
+```
+
+Both `discover` and `run` accept independent overrides:
 
 ```sh
-uv run factory run https://www.ausserberg.ch/ --out artifacts \
-  --model gpt-6-sol
+uv run factory discover https://www.ausserberg.ch/ --out artifacts \
+  --discovery-model gpt-6-sol --review-model gpt-6-luna
 ```
+
+Use `--model MODEL` to override both steps. A step-specific option takes precedence
+over `--model`; otherwise, the configured value is used. Use `--config PATH` to load
+another configuration file. The `build` step is deterministic and uses no model.
 
 Model API traffic goes only to OpenAI's fixed API endpoint; this is separate
 from website retrieval. Discovery uses Pydantic AI's native `WebSearch` capability
