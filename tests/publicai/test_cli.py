@@ -146,3 +146,47 @@ def test_cli_model_selection(
     )
     assert result.exit_code == 0, result.output
     assert selected == [expected]
+
+
+@pytest.mark.parametrize("command", ["discover", "run"])
+@pytest.mark.parametrize("mode", ["openai", "apertus"])
+def test_cli_mode_overrides_config_and_preserves_model_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, mode: str
+) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("mode: apertus\napertus:\n  review_model: configured-apertus-review\n")
+    selected = []
+
+    async def capture_settings(url: str, out: Path, settings: Settings, progress: object) -> Path:
+        selected.append(
+            (
+                settings.mode,
+                settings.active_model.provider,
+                settings.active_model.discovery_model,
+                settings.active_model.review_model,
+            )
+        )
+        return Path(__file__).parents[2] / "src/publicai/fixtures/representative.json"
+
+    monkeypatch.setattr("publicai.pipeline.discover", capture_settings)
+    monkeypatch.setattr("publicai.builder.build", lambda path, out: path.parent)
+    monkeypatch.setattr("publicai.cli._coverage", lambda path: None)
+    result = CliRunner().invoke(
+        app,
+        [
+            command,
+            "https://www.ausserberg.ch/",
+            "--out",
+            str(tmp_path),
+            "--config",
+            str(config),
+            "--mode",
+            mode,
+            "--model",
+            "shared",
+            "--review-model",
+            "specific",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert selected == [(mode, "swisscom" if mode == "apertus" else "openai", "shared", "specific")]

@@ -239,7 +239,7 @@ async def test_live_review_gold_set(request: pytest.FixtureRequest, tmp_path: Pa
                 record["error_type"] = type(error).__name__
             results.append(record)
     report = {
-        "model": settings.model.review_model,
+        "model": settings.active_model.review_model,
         "summary": summarize(results),
         "results": results,
     }

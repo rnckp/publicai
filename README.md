@@ -44,8 +44,8 @@ Use `--model MODEL` to override both steps. A step-specific option takes precede
 over `--model`; otherwise, the configured value is used. Use `--config PATH` to load
 another configuration file. The `build` step is deterministic and uses no model.
 
-Model API traffic goes only to OpenAI's fixed API endpoint; this is separate
-from website retrieval. Discovery uses Pydantic AI's native `WebSearch` capability
+Model API traffic uses the fixed endpoint for the selected provider, separately
+from website retrieval. In OpenAI mode, discovery uses Pydantic AI's native `WebSearch` capability
 with indexed results filtered to `www.ausserberg.ch`. Set `web_search_enabled: false`
 in `config.yaml` to disable it (the default when no configuration file is loaded).
 Search can incur provider tool charges; hosted searches are separate from the
@@ -66,6 +66,34 @@ the unresolved-capability list is `null`. Request/time budgets are distinguished
 from page size, nesting, and redirect limits.
 For semantic review rejections, inspect `review.json` beside `diagnostic.json` for
 the rejected claim paths and reasons; no discovery is published until review passes.
+
+## Try Apertus 1.5 through Swisscom
+
+Set `SWISSCOM_KEY` in `.env`, then run either command:
+
+```sh
+uv run factory discover https://www.ausserberg.ch/ --out artifacts --mode apertus
+uv run factory run https://www.ausserberg.ch/ --out artifacts --mode apertus
+```
+
+Both agents use `swiss-ai/Apertus-v1.5-70B` through Swisscom's Chat Completions
+endpoint, as specified in the [Swisscom hacker guide](https://zh.ai-weeks.ch/tools/swisscom-hacker-guide).
+Set `mode: apertus` in `config.yaml` for the default; tune models, request/token
+budgets, timeouts and retries under `apertus:`. The existing `--model`,
+`--discovery-model` and `--review-model` options override the selected profile.
+Use `--mode openai` to switch back.
+
+Requests are spaced at **2 per second**, including SDK retries, shared by both
+agents in a run. `apertus.requests_per_second` accepts values up to 4, below the
+provider's 5/s limit. Run one CLI process at a time with this key; separate processes
+and other applications do not share this limiter. SDK retries respect `Retry-After`.
+The guide lists a 60-minute bearer-token lifetime; replace expired credentials in `.env`.
+
+Apertus uses the restricted local website tools and the same evidence validation
+and review gates. Hosted OpenAI search is disabled in this mode, and structured
+output is validated locally without requesting OpenAI's strict schema mode.
+Offline tests verify the integration; model quality must be assessed from real runs
+and their `metrics.json`, `discovery-report.json`, and failure diagnostics.
 
 ## The two agents and their boundaries
 
@@ -222,7 +250,7 @@ conditions, handoffs, conflicting evidence, and source-instruction injection. Or
 tests validate the fixtures and evaluation scoring offline; they do not measure model
 accuracy. The paid evaluation stays skipped even when API credentials are present.
 
-To explicitly run all ten cases against `model.review_model` in `config.yaml`:
+To explicitly run all ten cases against the selected mode’s review model in `config.yaml`:
 
 ```sh
 uv run pytest tests/publicai/test_review_evals.py -k live_review_gold_set --run-review-evals -s

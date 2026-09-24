@@ -1,5 +1,6 @@
 """Validated operator settings; website permissions are deliberately not configurable."""
 
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
@@ -9,11 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from publicai.crawler import CrawlSettings
 
 
+class AgentMode(StrEnum):
+    """Select an independent provider/model profile."""
+
+    OPENAI = "openai"
+    APERTUS = "apertus"
+
+
 class ModelSettings(BaseModel):
     """Bound model requests independently from website request budgets."""
 
     model_config = ConfigDict(extra="forbid")
-    provider: Literal["openai"] = "openai"
     discovery_model: str = "gpt-6-sol"
     review_model: str = "gpt-6-luna"
     temperature: float | None = Field(default=None, ge=0, le=2)
@@ -24,6 +31,21 @@ class ModelSettings(BaseModel):
     request_limit: int = Field(default=24, ge=1, le=100)
     tool_calls_limit: int = Field(default=80, ge=1, le=200)
     total_tokens_limit: int = Field(default=250000, ge=1000, le=1000000)
+
+
+class OpenAISettings(ModelSettings):
+    """Direct OpenAI model profile."""
+
+    provider: Literal["openai"] = "openai"
+
+
+class ApertusSettings(ModelSettings):
+    """Swisscom profile with conservative per-run request pacing."""
+
+    provider: Literal["swisscom"] = "swisscom"
+    discovery_model: str = "swiss-ai/Apertus-v1.5-70B"
+    review_model: str = "swiss-ai/Apertus-v1.5-70B"
+    requests_per_second: float = Field(default=2, gt=0, le=4)
 
 
 class TelemetrySettings(BaseModel):
@@ -39,11 +61,18 @@ class Settings(BaseModel):
     """Factory settings loaded from an operator-controlled YAML file."""
 
     model_config = ConfigDict(extra="forbid")
-    model: ModelSettings = Field(default_factory=ModelSettings)
+    mode: AgentMode = AgentMode.OPENAI
+    apertus: ApertusSettings = Field(default_factory=ApertusSettings)
+    model: OpenAISettings = Field(default_factory=OpenAISettings)
     web_search_enabled: bool = False
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
     crawl: CrawlSettings = Field(default_factory=CrawlSettings)
     run_timeout: float = Field(default=600, gt=0, le=600)
+
+    @property
+    def active_model(self) -> OpenAISettings | ApertusSettings:
+        """Return the selected profile without modifying the other mode's settings."""
+        return self.apertus if self.mode == AgentMode.APERTUS else self.model
 
 
 def load_settings(path: Path | None = None) -> Settings:

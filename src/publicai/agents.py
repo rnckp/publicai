@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -13,16 +15,18 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 from urllib.parse import unquote, urlsplit
 
-from openai import AsyncOpenAI, DefaultAsyncHttpxClient
+from httpx import AsyncClient, Request
+from openai import AsyncOpenAI
 from pydantic import Field, ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
 from pydantic_ai.capabilities import WebFetch, WebSearch
 from pydantic_ai.models import Model
-from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
+from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import UsageLimits
 
-from publicai.config import Settings
+from publicai.config import AgentMode, Settings
 from publicai.contracts import (
     CONTRACT_VERSION,
     Capability,
@@ -312,12 +316,13 @@ def create_agents(
 ) -> FactoryAgents:
     """Create the two agents with small, eager, task-relevant tool sets."""
     model_settings = {
-        "max_tokens": settings.model.max_tokens,
-        "timeout": settings.model.timeout,
-        "openai_reasoning_effort": settings.model.reasoning_effort,
+        "max_tokens": settings.active_model.max_tokens,
+        "timeout": settings.active_model.timeout,
     }
-    if settings.model.temperature is not None:
-        model_settings["temperature"] = settings.model.temperature
+    if settings.mode == AgentMode.OPENAI:
+        model_settings["openai_reasoning_effort"] = settings.active_model.reasoning_effort
+    if settings.active_model.temperature is not None:
+        model_settings["temperature"] = settings.active_model.temperature
 
     async def web_fetch(ctx: RunContext[DiscoveryContext], url: str) -> dict[str, Any]:
         """Inspect public HTML or explicitly linked JSON on www.ausserberg.ch."""
@@ -342,17 +347,17 @@ def create_agents(
         discovery_model,
         name="municipality_discovery",
         deps_type=DiscoveryContext,
-        output_type=ToolOutput(Inventory, strict=True),
+        output_type=ToolOutput(Inventory, strict=settings.mode == AgentMode.OPENAI),
         instructions=(PROMPTS / "discovery.md").read_text(encoding="utf-8")
         + "\n"
         + (PROMPTS / "catalogue.md").read_text(encoding="utf-8"),
         model_settings=model_settings,
-        retries=settings.model.retries,
+        retries=settings.active_model.retries,
         capabilities=[
             WebFetch(native=False, local=web_fetch),
             *(
                 [WebSearch(allowed_domains=[ALLOWED_HOST], external_web_access=False)]
-                if settings.web_search_enabled
+                if settings.web_search_enabled and settings.mode == AgentMode.OPENAI
                 else []
             ),
         ],
@@ -405,12 +410,12 @@ def create_agents(
         review_model,
         name="municipality_evidence_review",
         deps_type=dict[str, SourceSnapshot],
-        output_type=ToolOutput(ReviewDecision, strict=True),
+        output_type=ToolOutput(ReviewDecision, strict=settings.mode == AgentMode.OPENAI),
         instructions=(PROMPTS / "review.md").read_text(encoding="utf-8")
         + "\n"
         + (PROMPTS / "catalogue.md").read_text(encoding="utf-8"),
         model_settings=model_settings,
-        retries=settings.model.retries,
+        retries=settings.active_model.retries,
     )
 
     @reviewer.tool
@@ -427,29 +432,57 @@ def create_agents(
 def usage_limits(settings: Settings) -> UsageLimits:
     """Bound each agent's model calls, tool calls and total tokens."""
     return UsageLimits(
-        request_limit=settings.model.request_limit,
-        tool_calls_limit=settings.model.tool_calls_limit,
-        total_tokens_limit=settings.model.total_tokens_limit,
+        request_limit=settings.active_model.request_limit,
+        tool_calls_limit=settings.active_model.tool_calls_limit,
+        total_tokens_limit=settings.active_model.total_tokens_limit,
     )
 
 
 @asynccontextmanager
 async def live_agents(settings: Settings) -> AsyncIterator[FactoryAgents]:
-    """Create and close SDK clients with a fixed provider endpoint."""
-    key_name = "OPENAI_API_KEY"
+    """Create and close SDK clients, pacing every Swisscom attempt including retries."""
+    apertus = settings.mode == AgentMode.APERTUS
+    key_name = "SWISSCOM_KEY" if apertus else "OPENAI_API_KEY"
     key = os.getenv(key_name)
-    if not key or key.startswith("your_"):
+    if not key or not key.strip() or key.startswith("your_"):
         raise ModelConfigurationError(
             f"{key_name} is missing; configure it in .env or the environment."
         )
+    lock = asyncio.Lock()
+    next_request = 0.0
+
+    async def pace_request(request: Request) -> None:
+        """Space HTTP attempts so concurrent calls and SDK retries share one budget."""
+        nonlocal next_request
+        async with lock:
+            delay = next_request - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            next_request = time.monotonic() + 1 / settings.apertus.requests_per_second
+
     async with AsyncOpenAI(
         api_key=key,
-        base_url="https://api.openai.com/v1",
-        timeout=settings.model.timeout,
-        max_retries=settings.model.retries,
-        http_client=DefaultAsyncHttpxClient(trust_env=False, follow_redirects=False),
+        base_url="https://api.swisscom.com/products/swiss-ai-weeks/apertus-1.5-70b/v1"
+        if apertus
+        else "https://api.openai.com/v1",
+        timeout=settings.active_model.timeout,
+        max_retries=settings.active_model.retries,
+        http_client=AsyncClient(
+            trust_env=False,
+            follow_redirects=False,
+            event_hooks={"request": [pace_request]} if apertus else None,
+        ),
     ) as client:
         adapter = OpenAIProvider(openai_client=client)
-        first = OpenAIResponsesModel(settings.model.discovery_model, provider=adapter)
-        second = OpenAIResponsesModel(settings.model.review_model, provider=adapter)
+        if apertus:
+            profile = OpenAIModelProfile(openai_supports_strict_tool_definition=False)
+            first = OpenAIChatModel(
+                settings.active_model.discovery_model, provider=adapter, profile=profile
+            )
+            second = OpenAIChatModel(
+                settings.active_model.review_model, provider=adapter, profile=profile
+            )
+        else:
+            first = OpenAIResponsesModel(settings.active_model.discovery_model, provider=adapter)
+            second = OpenAIResponsesModel(settings.active_model.review_model, provider=adapter)
         yield create_agents(settings, first, second)

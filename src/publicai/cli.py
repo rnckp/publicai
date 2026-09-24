@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from publicai.config import Settings, load_settings
+from publicai.config import AgentMode, Settings, load_settings
 from publicai.contracts import load_discovery
 from publicai.observability import configure
 
@@ -25,16 +25,19 @@ def _settings(
     model: str | None,
     discovery_model: str | None,
     review_model: str | None,
+    mode: AgentMode | None = None,
 ) -> Settings:
     load_dotenv()
     settings = load_settings(config)
+    if mode is not None:
+        settings.mode = mode
     if model:
-        settings.model.discovery_model = model
-        settings.model.review_model = model
+        settings.active_model.discovery_model = model
+        settings.active_model.review_model = model
     if discovery_model:
-        settings.model.discovery_model = discovery_model
+        settings.active_model.discovery_model = discovery_model
     if review_model:
-        settings.model.review_model = review_model
+        settings.active_model.review_model = review_model
     configure(settings.telemetry)
     return settings
 
@@ -84,6 +87,9 @@ def discover(
     url: str,
     out: Annotated[Path, typer.Option(help="Artifact root; each run creates a unique directory.")],
     config: Annotated[Path | None, typer.Option()] = None,
+    mode: Annotated[
+        AgentMode | None, typer.Option(help="Select the OpenAI or Apertus profile.")
+    ] = None,
     model: Annotated[
         str | None, typer.Option(help="Override both configured agent models.")
     ] = None,
@@ -98,7 +104,7 @@ def discover(
     from publicai.pipeline import discover as discover_pipeline
 
     try:
-        settings = _settings(config, model, discovery_model, review_model)
+        settings = _settings(config, model, discovery_model, review_model, mode)
         path = asyncio.run(discover_pipeline(url, out, settings, _progress))
         _coverage(path)
         console.print(f"Discovery: {path}", markup=False)
@@ -124,6 +130,9 @@ def run(
     url: str,
     out: Annotated[Path, typer.Option()],
     config: Annotated[Path | None, typer.Option()] = None,
+    mode: Annotated[
+        AgentMode | None, typer.Option(help="Select the OpenAI or Apertus profile.")
+    ] = None,
     model: Annotated[
         str | None, typer.Option(help="Override both configured agent models.")
     ] = None,
@@ -139,7 +148,7 @@ def run(
     from publicai.pipeline import discover as discover_pipeline
 
     try:
-        settings = _settings(config, model, discovery_model, review_model)
+        settings = _settings(config, model, discovery_model, review_model, mode)
         path = asyncio.run(discover_pipeline(url, out, settings, _progress))
         _progress("Building the fixed MCP template and running offline conformance")
         package = build_package(path, out)
