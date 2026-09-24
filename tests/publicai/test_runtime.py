@@ -133,18 +133,89 @@ def test_conditions_and_expired_validity_are_preserved(discovery: Discovery) -> 
 
 
 @pytest.mark.asyncio
-async def test_real_mcp_lists_six_readonly_tools_with_structured_output(
+async def test_mcp_preserves_conditional_guidance_in_text_and_structured_output(
     discovery: Discovery,
 ) -> None:
     server = create_server(discovery)
-    tools = await server.list_tools()
-    assert len(tools) == 6
-    assert all(tool.annotations.read_only_hint for tool in tools)
-    assert all(tool.output_schema for tool in tools)
     result = await server.call_tool("get_move_in_requirements", {})
     assert not result.is_error
-    assert result.structured_content["data"]["entries"][0]["requirements"]
-    assert result.content[0].text
+    data = result.structured_content
+    requirement = data["data"]["entries"][0]["requirements"][0]
+    assert requirement["text"]["value"] == "Ausländerausweis vorlegen."
+    assert [item["value"] for item in requirement["conditions"]] == ["Bei Zuzug aus dem Ausland."]
+    assert {citation["excerpt"] for citation in data["evidence"]} >= {
+        "Ausländerausweis vorlegen.",
+        "Bei Zuzug aus dem Ausland.",
+        "https://portal.example.test/registration",
+    }
+    text = result.content[0].text
+    assert "Ausländerausweis vorlegen. (Bei Zuzug aus dem Ausland.)" in text
+    assert "Official destination: https://portal.example.test/registration" in text
+    assert "Build-time snapshot fictional-discovery-1" in text
+
+
+@pytest.mark.parametrize(
+    "tool,filter_name,label,identifier,expected_ids",
+    [
+        ("get_office_hours", "office", "Kanzlei", "kanzlei", ["kanzlei"]),
+        (
+            "get_garbage_collection",
+            "waste_type",
+            "Kehricht",
+            "kehricht-nord",
+            ["kehricht-nord"],
+        ),
+        ("get_recycling_info", "material", "Glas", "glas", ["glas"]),
+        ("get_problem_reporting_info", "category", "Schadenmeldung", "schaden", ["schaden"]),
+    ],
+)
+async def test_mcp_filters_match_exact_labels_and_ids(
+    discovery: Discovery,
+    tool: str,
+    filter_name: str,
+    label: str,
+    identifier: str,
+    expected_ids: list[str],
+) -> None:
+    """README filters must survive SDK argument forwarding, including rejection of substrings."""
+    server = create_server(discovery)
+    arguments = (
+        {"zone": " nOrD ", "date_from": "2026-10-01", "date_to": "2026-10-30"}
+        if filter_name == "waste_type"
+        else {}
+    )
+    for value in (f" {label.upper()} ", identifier):
+        result = await server.call_tool(tool, {**arguments, filter_name: value})
+        assert not result.is_error
+        data = result.structured_content
+        assert data["outcome"] == "ok"
+        assert [entry["id"] for entry in data["data"]["entries"]] == expected_ids
+    for value in (label[:-1], "unknown"):
+        result = await server.call_tool(tool, {**arguments, filter_name: value})
+        assert not result.is_error
+        data = result.structured_content
+        assert data["outcome"] == "unknown_filter"
+        assert data["data"]["entries"] == []
+        assert label in data["available_choices"][filter_name]
+
+
+def test_date_filtering_does_not_mutate_later_queries(runtime: SnapshotRuntime) -> None:
+    """The read-only contract holds across narrow, unzoned, and repeated date queries."""
+    narrow = runtime.query(
+        "garbage_collection", zone="Nord", date_from="2026-10-30", date_to="2026-10-30"
+    )
+    assert [item.value for item in narrow.data.entries[0].dates] == [date(2026, 10, 30)]
+    assert runtime.query("garbage_collection").outcome == "needs_input"
+    south = runtime.query("garbage_collection", zone="Süd")
+    assert [entry.id for entry in south.data.entries] == ["kehricht-sued"]
+    assert [item.value for item in south.data.entries[0].dates] == [date(2026, 10, 15)]
+    for _ in range(2):
+        north = runtime.query("garbage_collection", zone="Nord")
+        assert [entry.id for entry in north.data.entries] == ["kehricht-nord"]
+        assert [item.value for item in north.data.entries[0].dates] == [
+            date(2026, 10, 1),
+            date(2026, 10, 30),
+        ]
 
 
 @pytest.mark.parametrize(

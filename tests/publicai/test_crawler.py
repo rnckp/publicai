@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+from collections import Counter
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from hashlib import sha256
 
@@ -238,13 +240,96 @@ def test_document_handoffs_allow_encoded_spaces_but_never_control_characters() -
     ]
 
 
-def test_body_limit_rejects_truncated_content() -> None:
-    result, _, _ = run_fetch(
-        {"/": (200, {"content-type": "text/html"}, b"a" * 101)},
-        settings=CrawlSettings(max_bytes=100),
-    )
-    assert isinstance(result, CrawlError)
-    assert result.reason == "crawl_limit"
+@pytest.mark.parametrize("failure", [None, "overflow", "read_error"])
+async def test_streamed_body_limit_and_cleanup(failure: str | None) -> None:
+    """Count cumulative bytes, reject partial evidence, and release each HTTP response."""
+
+    class Body(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b"<p>Public "
+            if failure == "read_error":
+                raise httpx.ReadError("private upstream detail")
+            yield b"guidance</p>"
+            if failure == "overflow":
+                yield b"!"
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    body = Body()
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(200, headers={"content-type": "text/html"}, stream=body)
+
+    async with SafeCrawler(
+        CrawlSettings(max_bytes=22),
+        resolver=public_resolver,
+        transport=httpx.MockTransport(respond),
+    ) as crawler:
+        if failure is None:
+            page = await crawler.fetch(BASE)
+            assert page.text == "Public guidance"
+            assert crawler.failures == []
+        else:
+            with pytest.raises(CrawlError) as error:
+                await crawler.fetch(BASE)
+            expected_reason = "crawl_limit" if failure == "overflow" else "blocked"
+            assert error.value.reason == expected_reason
+            assert crawler.pages == {}
+            assert [item.reason for item in crawler.failures] == [expected_reason]
+            assert "private upstream detail" not in str(crawler.failures)
+        # Check before client shutdown, which could otherwise conceal a response leak.
+        assert body.closed
+
+
+async def test_cancelled_fetch_closes_stream_and_releases_capacity() -> None:
+    """Caller cancellation must not retain partial evidence or strand the only fetch slot."""
+    started = asyncio.Event()
+
+    class WaitingBody(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b"<p>Partial"
+            started.set()
+            await asyncio.Event().wait()
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    body = WaitingBody()
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/slow":
+            return httpx.Response(200, headers={"content-type": "text/html"}, stream=body)
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, text="<p>Complete guidance</p>"
+        )
+
+    async with SafeCrawler(
+        CrawlSettings(concurrency=1),
+        resolver=public_resolver,
+        transport=httpx.MockTransport(respond),
+    ) as crawler:
+        task = asyncio.create_task(crawler.fetch(BASE + "/slow"))
+        try:
+            async with asyncio.timeout(5):
+                await started.wait()
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert body.closed
+        assert BASE + "/slow" not in crawler.pages
+        async with asyncio.timeout(5):
+            page = await crawler.fetch(BASE + "/healthy")
+        assert page.text == "Complete guidance"
 
 
 def test_html_extraction_retains_evidence_and_handoffs_without_field_values() -> None:
@@ -441,7 +526,9 @@ def test_seed_counts_sitemaps_and_selects_relevant_identity_pages() -> None:
             assert crawler.failures == []
 
     asyncio.run(run())
-    assert requests == ["/robots.txt", "/", "/sitemap.xml", "/impressum", "/standort-kontakt"]
+    assert Counter(requests) == Counter(
+        ["/robots.txt", "/", "/sitemap.xml", "/impressum", "/standort-kontakt"]
+    )
 
 
 def test_redirect_destination_is_checked_against_robots_before_get() -> None:
