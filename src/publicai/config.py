@@ -46,6 +46,10 @@ class ApertusSettings(ModelSettings):
     discovery_model: str = "swiss-ai/Apertus-v1.5-70B"
     review_model: str = "swiss-ai/Apertus-v1.5-70B"
     requests_per_second: float = Field(default=2, gt=0, le=4)
+    search_max_results: int = Field(default=5, ge=1, le=10)
+    search_request_limit: int = Field(default=8, ge=1, le=24)
+    search_timeout: int = Field(default=10, ge=1, le=30)
+    search_interval: float = Field(default=1, ge=1, le=60)
 
 
 class TelemetrySettings(BaseModel):

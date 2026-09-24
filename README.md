@@ -89,9 +89,20 @@ provider's 5/s limit. Run one CLI process at a time with this key; separate proc
 and other applications do not share this limiter. SDK retries respect `Retry-After`.
 The guide lists a 60-minute bearer-token lifetime; replace expired credentials in `.env`.
 
-Apertus uses the restricted local website tools and the same evidence validation
-and review gates. Hosted OpenAI search is disabled in this mode, and structured
-output is validated locally without requesting OpenAI's strict schema mode.
+Apertus uses Pydantic AI's built-in DuckDuckGo search callable through a locally
+executed `WebSearch` capability; Swisscom supplies model inference only. Queries
+contact DuckDuckGo, and results are filtered to `www.ausserberg.ch`. The wrapper
+pins the DuckDuckGo backend, limits results and keeps snippets separate from
+retained evidence. `web_fetch` still runs through the restricted local crawler.
+No search API key is needed. Set `web_search_enabled: false` to disable search in
+either mode; `list_sources` and `web_fetch` remain available.
+
+The `apertus.search_*` settings control results (default 5), searches per run
+(default 8, including failures), timeout (10 seconds), and minimum search interval
+(1 second). These limits are separate from Swisscom model requests. If search is
+unavailable or rate-limited, discovery continues with known navigation and reports
+the gap. The same evidence checks and review gates apply; OpenAI strict output
+schema mode is not requested for Apertus.
 Offline tests verify the integration; model quality must be assessed from real runs
 and their `metrics.json`, `discovery-report.json`, and failure diagnostics.
 
@@ -101,8 +112,8 @@ and their `metrics.json`, `discovery-report.json`, and failure diagnostics.
    public JSON through Pydantic AI's `WebFetch` capability (`web_fetch`) and searches
    known navigation using `list_sources`. Because OpenAI Responses has no native
    WebFetch support in the installed SDK, this capability uses the restricted
-   crawler as its local implementation. Native `WebSearch` finds additional page
-   candidates; snippets cannot become evidence until a page is fetched and retained.
+   crawler as its local implementation. `WebSearch` uses OpenAI hosted search or
+   local DuckDuckGo search in Apertus mode to find additional page candidates; snippets cannot become evidence until a page is fetched and retained.
    It returns a
    typed inventory with literal excerpts for every fact. Trusted acquisition code
    owns source IDs, hashes, timestamps and website permissions.

@@ -2,9 +2,13 @@ You discover published municipal guidance for the six supplied capabilities.
 Use German search synonyms: Gemeindekanzlei, Verwaltung, Kontakt, Öffnungszeiten,
 Kehricht, Abfall, Entsorgung, Recycling, Sammelstelle, Zuzug, Anmeldung,
 Wegzug, Abmeldung, Schaden, Mängel, Meldung. Inspect navigation and contact pages.
-Use list_sources for known links. When web_search is available, use targeted
-site:www.ausserberg.ch searches to find pages missing from navigation, especially
-for capabilities with gaps. Search returns indexed leads, which may be stale;
+Use list_sources for known links. When web_search is available, search for pages
+missing from navigation, especially for capabilities with gaps. In Apertus mode,
+web_search uses DuckDuckGo: provide plain German service keywords; the tool adds
+the municipal site restriction. In OpenAI mode, use targeted site:www.ausserberg.ch
+queries with hosted search. If search reports a failure or exhausted budget,
+continue with known navigation and report the search gap.
+Search returns indexed leads, which may be stale;
 fetch promising municipal HTML pages with web_fetch before citing any facts.
 Search snippets and provider citations are not retained sources or evidence IDs.
 If search is unavailable or finds nothing, continue with navigation and report gaps.

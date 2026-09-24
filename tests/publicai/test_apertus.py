@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from ddgs.ddgs import DDGS
 from pydantic_ai import models
 from test_pipeline import RetainedCrawler
 
@@ -54,14 +55,27 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
         assert "response_format" not in body
         assert all(not tool["function"].get("strict") for tool in body["tools"])
         names = {tool["function"]["name"] for tool in body["tools"]}
-        assert not any("search" in name for name in names)
+        assert names == (
+            {"web_search", "web_fetch", "list_sources", "final_result"}
+            if "list_sources" in names
+            else {"read_source", "final_result"}
+        )
         if len(attempts) == 1:
             return httpx.Response(429, headers={"retry-after": "0.01"}, json={"error": "limited"})
         discovery = "list_sources" in names
         if not any(message["role"] == "tool" for message in body["messages"]):
-            name = "list_sources" if discovery else "read_source"
-            arguments = {} if discovery else {"source_id": "source-1"}
+            name = "web_search" if discovery else "read_source"
+            arguments = {"query": "Kontakt"} if discovery else {"source_id": "source-1"}
+        elif discovery and len([m for m in body["messages"] if m["role"] == "tool"]) == 1:
+            searched = json.loads(body["messages"][-1]["content"])
+            assert searched["scope"] == "duckduckgo_municipal_index"
+            name = "web_fetch"
+            arguments = {"url": fixture["sources"][0]["url"]}
         else:
+            if discovery:
+                fetched = json.loads(body["messages"][-1]["content"])
+                assert fetched["source"]["id"] == "source-1"
+                assert fetched["untrusted_evidence"] is True
             name = next(name for name in names if name.startswith("final_result"))
             arguments = (
                 candidate
@@ -110,6 +124,7 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
         clients.append(client)
         return client
 
+    monkeypatch.setattr(DDGS, "text", lambda self, query, **kwargs: [])
     monkeypatch.setenv("SWISSCOM_KEY", "test-swisscom-key")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
@@ -119,6 +134,13 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
     settings = Settings(mode="apertus", web_search_enabled=True)
     crawler = RetainedCrawler(fixture["sources"])
     crawler.settings = settings.crawl
+    fetched_urls = []
+
+    async def fetch(url: str) -> object:
+        fetched_urls.append(url)
+        return (await crawler.seed(fixture["official_url"]))[0]
+
+    crawler.fetch = fetch
     async with live_agents(settings) as agents:
         path = await discover_with_agents(
             "https://www.ausserberg.ch/",
@@ -128,8 +150,15 @@ async def test_swisscom_tool_workflow_and_retry_pacing(
             crawler,
         )
     assert json.loads(path.read_text())["review"]["status"] == "passed"
-    assert tool_names == ["list_sources", "final_result", "read_source", "final_result"]
-    assert len(attempts) == 5
+    assert tool_names == [
+        "web_search",
+        "web_fetch",
+        "final_result",
+        "read_source",
+        "final_result",
+    ]
+    assert len(attempts) == 6
+    assert fetched_urls == [fixture["sources"][0]["url"]]
     assert all(later - earlier >= 0.5 for earlier, later in pairwise(attempts))
     assert all(client.is_closed for client in clients)
 

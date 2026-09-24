@@ -38,7 +38,16 @@ def configure(settings: TelemetrySettings) -> None:
     logger.setLevel(logging.INFO)
     logger.propagate = False
     # Third-party request/exception logs can contain URLs, prompts, or credentials.
-    for name in ("httpx", "httpx2", "httpcore", "httpcore2", "openai", "pydantic_ai"):
+    for name in (
+        "httpx",
+        "httpx2",
+        "httpcore",
+        "httpcore2",
+        "openai",
+        "pydantic_ai",
+        "ddgs",
+        "primp",
+    ):
         logging.getLogger(name).setLevel(logging.CRITICAL)
     if settings.enabled:
         import logfire

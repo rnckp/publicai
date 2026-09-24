@@ -42,3 +42,9 @@
   MCP and lists the six tools on the running loopback HTTP server; its port must
   match the server's port.
 - The locked MCP 2.x SDK uses `MCPServer` as its high-level Python server.
+- Apertus search uses Pydantic AI's built-in DuckDuckGo callable through a local
+  `WebSearch` capability. In the installed SDK, `allowed_domains` and
+  `external_web_access=False` require native provider support, so municipal query
+  scoping and result URL validation belong in the local wrapper. DDGS defaults
+  to multiple backends; explicitly select `duckduckgo` to keep provider access
+  predictable. Search budgets/pacing are separate from Swisscom model requests.
